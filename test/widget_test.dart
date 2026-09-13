@@ -125,7 +125,9 @@ void main() {
       ],
       messagesById: <String, gmail.Message>{
         'message-1': _gmailMessage(
+          fromHeaderName: 'from',
           from: 'sender@example.com',
+          subjectHeaderName: 'subject',
           subject: 'Subject',
           snippet: 'Preview',
         ),
@@ -236,6 +238,28 @@ void main() {
     );
     expect(controller.errorMessage, contains('signout failed'));
   });
+
+  test('controller recreates the sign-in client after sign-out failure', () async {
+    var factoryCalls = 0;
+    final controller = MailCheckerController(
+      googleSignInFactory: () {
+        factoryCalls += 1;
+        return _FakeSignInClient(
+          account: const _FakeMailCheckerAccount(),
+          signOutError: factoryCalls == 1 ? 'signout failed' : null,
+        );
+      },
+      loadInboxAction: (_) async => const <InboxEmail>[],
+    );
+
+    await controller.signIn();
+    await controller.signOut();
+    await controller.signIn();
+
+    expect(factoryCalls, 2);
+    expect(controller.isSignedIn, isTrue);
+    expect(controller.errorMessage, isNull);
+  });
 }
 
 class _FakeMailCheckerAccount implements MailCheckerAccount {
@@ -299,18 +323,20 @@ class _FakeGmailApi implements MailCheckerGmailApi {
 }
 
 gmail.Message _gmailMessage({
+  String fromHeaderName = 'From',
   String? from,
+  String subjectHeaderName = 'Subject',
   String? subject,
   String? snippet,
 }) {
   final headers = <gmail.MessagePartHeader>[
     if (from != null)
       gmail.MessagePartHeader()
-        ..name = 'From'
+        ..name = fromHeaderName
         ..value = from,
     if (subject != null)
       gmail.MessagePartHeader()
-        ..name = 'Subject'
+        ..name = subjectHeaderName
         ..value = subject,
   ];
 

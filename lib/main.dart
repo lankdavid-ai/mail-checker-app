@@ -328,6 +328,7 @@ class MailCheckerController extends ChangeNotifier {
 
     _account = null;
     _emails = const <InboxEmail>[];
+    _signInClient = null;
     if (signOutError == null) {
       _statusMessage = 'Signed out. Sign in again to reload Gmail.';
     } else {
@@ -389,11 +390,11 @@ class MailCheckerController extends ChangeNotifier {
       for (final header
           in message.payload?.headers ?? const <gmail.MessagePartHeader>[])
         if (header.name != null && header.value != null)
-          header.name!: header.value!,
+          header.name!.toLowerCase(): header.value!,
     };
     return InboxEmail(
-      subject: headers['Subject'] ?? '(No subject)',
-      from: headers['From'] ?? '(Unknown sender)',
+      subject: headers['subject'] ?? '(No subject)',
+      from: headers['from'] ?? '(Unknown sender)',
       snippet: message.snippet ?? '',
     );
   }
