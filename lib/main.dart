@@ -4,22 +4,40 @@ import 'package:googleapis/gmail/v1.dart' as gmail;
 import 'package:http/http.dart' as http;
 
 const _serverClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
-
-typedef SignInAction = Future<Object?> Function();
-typedef SignOutAction = Future<void> Function();
-typedef LoadInboxAction = Future<List<InboxEmail>> Function(Object account);
-
 const _messageBatchSize = 3;
 
+typedef SignInAction = Future<MailCheckerAccount?> Function();
+typedef SignOutAction = Future<void> Function();
+typedef LoadInboxAction = Future<List<InboxEmail>> Function(
+  MailCheckerAccount account,
+);
+
 void main() {
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
-  MyApp({super.key, MailCheckerController? controller})
-      : controller = controller ?? MailCheckerController();
+class MyApp extends StatefulWidget {
+  const MyApp({super.key, this.controller});
 
-  final MailCheckerController controller;
+  final MailCheckerController? controller;
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late final MailCheckerController _controller =
+      widget.controller ?? MailCheckerController();
+
+  bool get _ownsController => widget.controller == null;
+
+  @override
+  void dispose() {
+    if (_ownsController) {
+      _controller.dispose();
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +46,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
       ),
-      home: MailCheckerHomePage(controller: controller),
+      home: MailCheckerHomePage(controller: _controller),
     );
   }
 }
@@ -121,6 +139,19 @@ class MailCheckerHomePage extends StatelessWidget {
   }
 }
 
+abstract interface class MailCheckerAccount {
+  Future<Map<String, String>> get authHeaders;
+}
+
+class GoogleMailCheckerAccount implements MailCheckerAccount {
+  GoogleMailCheckerAccount(this._account);
+
+  final GoogleSignInAccount _account;
+
+  @override
+  Future<Map<String, String>> get authHeaders => _account.authHeaders;
+}
+
 class MailCheckerController extends ChangeNotifier {
   MailCheckerController({
     GoogleSignIn? googleSignIn,
@@ -147,7 +178,7 @@ class MailCheckerController extends ChangeNotifier {
       'Complete the Google Cloud setup in README.md, then sign in.';
   String? _errorMessage;
   List<InboxEmail> _emails = const <InboxEmail>[];
-  Object? _account;
+  MailCheckerAccount? _account;
 
   bool get isBusy => _isBusy;
   bool get isSignedIn => _account != null;
@@ -160,14 +191,14 @@ class MailCheckerController extends ChangeNotifier {
       : 'Using the Google server client ID provided through dart-define.';
 
   Future<void> signIn() async {
-    _setBusy(true);
+    _isBusy = true;
     _statusMessage = 'Opening Google Sign-In…';
     _errorMessage = null;
     notifyListeners();
 
-    Object? account;
+    MailCheckerAccount? account;
     try {
-      account = await (_signInAction?.call() ?? _googleSignIn.signIn());
+      account = await (_signInAction?.call() ?? _defaultSignIn());
     } catch (error) {
       _account = null;
       _emails = const <InboxEmail>[];
@@ -175,7 +206,8 @@ class MailCheckerController extends ChangeNotifier {
           '$error\n\nVerify the package name, SHA-1 fingerprint, Gmail API, '
           'and OAuth clients described in README.md.';
       _statusMessage = 'Google Sign-In failed.';
-      _setBusy(false);
+      _isBusy = false;
+      notifyListeners();
       return;
     }
 
@@ -183,7 +215,8 @@ class MailCheckerController extends ChangeNotifier {
       _account = null;
       _emails = const <InboxEmail>[];
       _statusMessage = 'Google Sign-In was cancelled.';
-      _setBusy(false);
+      _isBusy = false;
+      notifyListeners();
       return;
     }
 
@@ -202,32 +235,42 @@ class MailCheckerController extends ChangeNotifier {
           '$error\n\nVerify the package name, SHA-1 fingerprint, Gmail API, '
           'and OAuth clients described in README.md.';
       _statusMessage = 'Signed in, but Gmail loading failed.';
-    } finally {
-      _setBusy(false);
     }
+
+    _isBusy = false;
+    notifyListeners();
   }
 
   Future<void> signOut() async {
-    _setBusy(true);
+    _isBusy = true;
     _errorMessage = null;
+    _account = null;
+    _emails = const <InboxEmail>[];
+    _statusMessage = 'Signing out…';
     notifyListeners();
 
     try {
       await (_signOutAction?.call() ?? _googleSignIn.signOut());
-      _account = null;
-      _emails = const <InboxEmail>[];
       _statusMessage = 'Signed out. Sign in again to reload Gmail.';
     } catch (error) {
       _errorMessage = '$error';
-      _statusMessage = 'Sign-out failed.';
-    } finally {
-      _setBusy(false);
+      _statusMessage = 'Signed out locally, but Google sign-out failed.';
     }
+
+    _isBusy = false;
+    notifyListeners();
   }
 
-  Future<List<InboxEmail>> _loadInbox(Object account) async {
-    final googleAccount = account as GoogleSignInAccount;
-    final authHeaders = await googleAccount.authHeaders;
+  Future<MailCheckerAccount?> _defaultSignIn() async {
+    final account = await _googleSignIn.signIn();
+    if (account == null) {
+      return null;
+    }
+    return GoogleMailCheckerAccount(account);
+  }
+
+  Future<List<InboxEmail>> _loadInbox(MailCheckerAccount account) async {
+    final authHeaders = await account.authHeaders;
     final client = GoogleAuthClient(authHeaders);
     try {
       final api = gmail.GmailApi(client);
@@ -239,7 +282,9 @@ class MailCheckerController extends ChangeNotifier {
       final emails = <InboxEmail>[];
       for (var i = 0; i < messageIds.length; i += _messageBatchSize) {
         final batch = messageIds.skip(i).take(_messageBatchSize).toList();
-        emails.addAll(await Future.wait(batch.map((id) => _loadMessage(api, id))));
+        emails.addAll(
+          await Future.wait(batch.map((id) => _loadMessage(api, id))),
+        );
       }
       return emails;
     } finally {
@@ -265,11 +310,6 @@ class MailCheckerController extends ChangeNotifier {
       from: headers['From'] ?? '(Unknown sender)',
       snippet: message.snippet ?? '',
     );
-  }
-
-  void _setBusy(bool value) {
-    _isBusy = value;
-    notifyListeners();
   }
 }
 

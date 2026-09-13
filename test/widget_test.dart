@@ -4,7 +4,7 @@ import 'package:mail_checker_app/main.dart';
 
 void main() {
   testWidgets('shows Google Sign-In entry screen', (WidgetTester tester) async {
-    await tester.pumpWidget(MyApp());
+    await tester.pumpWidget(const MyApp());
 
     expect(find.text('Mail Checker'), findsOneWidget);
     expect(
@@ -31,6 +31,23 @@ void main() {
     expect(controller.statusMessage, 'Google Sign-In was cancelled.');
   });
 
+  test('controller reports an empty inbox after sign-in', () async {
+    final controller = MailCheckerController(
+      signInAction: () async => const _FakeMailCheckerAccount(),
+      loadInboxAction: (_) async => const <InboxEmail>[],
+    );
+
+    await controller.signIn();
+
+    expect(controller.isSignedIn, isTrue);
+    expect(controller.isBusy, isFalse);
+    expect(controller.emails, isEmpty);
+    expect(
+      controller.statusMessage,
+      'Signed in successfully, but the inbox is empty.',
+    );
+  });
+
   test('controller loads inbox after successful sign-in', () async {
     final emails = [
       const InboxEmail(
@@ -40,7 +57,7 @@ void main() {
       ),
     ];
     final controller = MailCheckerController(
-      signInAction: () async => Object(),
+      signInAction: () async => const _FakeMailCheckerAccount(),
       loadInboxAction: (_) async => emails,
     );
 
@@ -54,7 +71,7 @@ void main() {
 
   test('controller reports Gmail loading errors after sign-in', () async {
     final controller = MailCheckerController(
-      signInAction: () async => Object(),
+      signInAction: () async => const _FakeMailCheckerAccount(),
       loadInboxAction: (_) async => throw Exception('boom'),
     );
 
@@ -69,4 +86,11 @@ void main() {
     );
     expect(controller.errorMessage, contains('boom'));
   });
+}
+
+class _FakeMailCheckerAccount implements MailCheckerAccount {
+  const _FakeMailCheckerAccount();
+
+  @override
+  Future<Map<String, String>> get authHeaders async => const {};
 }
