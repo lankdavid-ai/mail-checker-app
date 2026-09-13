@@ -1,446 +1,320 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/gmail/v1.dart' as gmail;
 
 import 'package:mail_checker_app/main.dart';
 
 void main() {
-  testWidgets('shows Google sign-in prompt when signed out', (
+  testWidgets('shows Google Sign-In entry screen', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(
-      const TestApp(
-        child: MailCheckerHomePage(
-          isSignedIn: false,
-          isLoading: false,
-          emails: <MailMessageSummary>[],
-          onRefresh: _noop,
-          onSignIn: _noop,
-          onSignOut: _noop,
-        ),
-      ),
-    );
+    await tester.pumpWidget(const MyApp());
 
     expect(find.text('Mail Checker'), findsOneWidget);
+    expect(
+      find.text('Sign in with Google to load your Gmail inbox.'),
+      findsOneWidget,
+    );
     expect(find.text('Sign in with Google'), findsOneWidget);
     expect(
-      find.text('Sign in with Google to load recent emails from your Gmail inbox.'),
+      find.text(
+        'Optional: pass --dart-define=GOOGLE_SERVER_CLIENT_ID=<web-client-id> only if your Google Sign-In setup requires a web OAuth client ID.',
+      ),
       findsOneWidget,
     );
   });
 
-  testWidgets('shows fetched emails and logout action when signed in', (
+  testWidgets('shows signed-in actions and inbox preview', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(
-      const TestApp(
-        child: MailCheckerHomePage(
-          isSignedIn: true,
-          isLoading: false,
-          displayName: 'Flutter Tester',
-          emails: <MailMessageSummary>[
-            MailMessageSummary(
-              sender: 'alice@example.com',
-              subject: 'Welcome',
-              preview: 'Thanks for trying the Gmail integration.',
-            ),
-          ],
-          onRefresh: _noop,
-          onSignIn: _noop,
-          onSignOut: _noop,
-        ),
-      ),
-    );
-
-    expect(find.text('Signed in as Flutter Tester'), findsOneWidget);
-    expect(find.text('Welcome'), findsOneWidget);
-    expect(find.text('alice@example.com'), findsOneWidget);
-    expect(
-      find.text('Thanks for trying the Gmail integration.'),
-      findsOneWidget,
-    );
-    expect(find.byTooltip('Logout'), findsOneWidget);
-  });
-
-  testWidgets('shows signed-in empty inbox state', (WidgetTester tester) async {
-    await tester.pumpWidget(
-      const TestApp(
-        child: MailCheckerHomePage(
-          isSignedIn: true,
-          isLoading: false,
-          displayName: 'Flutter Tester',
-          emails: <MailMessageSummary>[],
-          onRefresh: _noop,
-          onSignIn: _noop,
-          onSignOut: _noop,
-        ),
-      ),
-    );
-
-    expect(find.text('Signed in as Flutter Tester'), findsOneWidget);
-    expect(find.text('No recent emails were found in your inbox.'), findsOneWidget);
-  });
-
-  testWidgets('shows fallback inbox title when display name is unavailable', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(
-      const TestApp(
-        child: MailCheckerHomePage(
-          isSignedIn: true,
-          isLoading: false,
-          emails: <MailMessageSummary>[],
-          onRefresh: _noop,
-          onSignIn: _noop,
-          onSignOut: _noop,
-        ),
-      ),
-    );
-
-    expect(find.text('Recent inbox messages'), findsOneWidget);
-  });
-
-  testWidgets('shows signed-in Gmail access error', (WidgetTester tester) async {
-    await tester.pumpWidget(
-      const TestApp(
-        child: MailCheckerHomePage(
-          isSignedIn: true,
-          isLoading: false,
-          displayName: 'Flutter Tester',
-          emails: <MailMessageSummary>[],
-          errorMessage: 'Unable to access Gmail right now.',
-          onRefresh: _noop,
-          onSignIn: _noop,
-          onSignOut: _noop,
-        ),
-      ),
-    );
-
-    expect(find.text('Unable to access Gmail right now.'), findsOneWidget);
-    expect(find.byTooltip('Refresh emails'), findsOneWidget);
-  });
-
-  testWidgets('shows loading indicator and disables signed-in actions', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(
-      const TestApp(
-        child: MailCheckerHomePage(
-          isSignedIn: true,
-          isLoading: true,
-          displayName: 'Flutter Tester',
-          emails: <MailMessageSummary>[],
-          onRefresh: _noop,
-          onSignIn: _noop,
-          onSignOut: _noop,
-        ),
-      ),
-    );
-
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
-
-    final IconButton logoutButton = tester.widget<IconButton>(
-      find.byTooltip('Logout'),
-    );
-    final IconButton refreshButton = tester.widget<IconButton>(
-      find.byTooltip('Refresh emails'),
-    );
-
-    expect(logoutButton.onPressed, isNull);
-    expect(refreshButton.onPressed, isNull);
-  });
-
-  test('controller syncs silent sign-in state across initialize calls', () async {
-    final FakeGoogleUserSession user = FakeGoogleUserSession(
-      email: 'alice@example.com',
-      displayName: 'Alice',
-    );
-    final FakeGoogleAuthProvider authProvider = FakeGoogleAuthProvider(
-      silentUser: user,
-    );
-    final FakeGmailService gmailService = FakeGmailService(
-      emails: const <MailMessageSummary>[
-        MailMessageSummary(
-          sender: 'team@example.com',
-          subject: 'Hello',
-          preview: 'Welcome to Gmail.',
+    final controller = MailCheckerController(
+      googleSignInFactory: () =>
+          const _FakeSignInClient(account: _FakeMailCheckerAccount()),
+      loadInboxAction: (_) async => const [
+        InboxEmail(
+          subject: 'Subject',
+          from: 'sender@example.com',
+          snippet: 'Preview',
         ),
       ],
     );
-    final MailCheckerController controller = MailCheckerController(
-      authProvider: authProvider,
-      gmailService: gmailService,
-    );
 
-    await controller.initialize();
-    expect(controller.isSignedIn, isTrue);
-    expect(controller.currentUser?.email, 'alice@example.com');
-    expect(controller.emails, hasLength(1));
+    await controller.signIn();
+    await tester.pumpWidget(MyApp(controller: controller));
 
-    authProvider.silentUser = null;
-    await controller.initialize();
-    expect(controller.isSignedIn, isFalse);
-    expect(controller.currentUser, isNull);
-    expect(controller.emails, isEmpty);
+    expect(find.text('Refresh inbox'), findsOneWidget);
+    expect(find.text('Sign out'), findsOneWidget);
+    expect(find.text('Inbox Preview'), findsOneWidget);
+    expect(find.text('Subject'), findsOneWidget);
   });
 
-  test('controller clears existing session when sign-in is cancelled', () async {
-    final FakeGoogleUserSession user = FakeGoogleUserSession(
-      email: 'alice@example.com',
-      displayName: 'Alice',
-    );
-    final FakeGoogleAuthProvider authProvider = FakeGoogleAuthProvider(
-      signInUser: user,
-    );
-    final MailCheckerController controller = MailCheckerController(
-      authProvider: authProvider,
-      gmailService: FakeGmailService(
-        emails: const <MailMessageSummary>[
-          MailMessageSummary(
-            sender: 'team@example.com',
-            subject: 'Hello',
-            preview: 'Welcome to Gmail.',
-          ),
-        ],
-      ),
+  test('controller reports cancelled sign-in', () async {
+    final controller = MailCheckerController(
+      googleSignInFactory: () => const _FakeSignInClient(),
     );
 
     await controller.signIn();
-    expect(controller.isSignedIn, isTrue);
 
-    authProvider.signInUser = null;
-    await controller.signIn();
     expect(controller.isSignedIn, isFalse);
-    expect(controller.currentUser, isNull);
+    expect(controller.isBusy, isFalse);
     expect(controller.emails, isEmpty);
+    expect(controller.statusMessage, 'Google Sign-In was cancelled.');
   });
 
-  test('controller clears local session and shows generic error on sign-out failure', () async {
-    final FakeGoogleAuthProvider authProvider = FakeGoogleAuthProvider(
-      signInUser: FakeGoogleUserSession(
-        email: 'alice@example.com',
-        displayName: 'Alice',
-      ),
-    );
-    final MailCheckerController controller = MailCheckerController(
-      authProvider: authProvider,
-      gmailService: FakeGmailService(
-        emails: const <MailMessageSummary>[
-          MailMessageSummary(
-            sender: 'team@example.com',
-            subject: 'Hello',
-            preview: 'Welcome to Gmail.',
-          ),
-        ],
-      ),
+  test('controller reports sign-in errors', () async {
+    final controller = MailCheckerController(
+      googleSignInFactory: () =>
+          const _FakeSignInClient(signInError: 'signin failed'),
     );
 
     await controller.signIn();
-    authProvider.throwOnSignOut = true;
 
+    expect(controller.isSignedIn, isFalse);
+    expect(controller.isBusy, isFalse);
+    expect(controller.emails, isEmpty);
+    expect(controller.statusMessage, 'Google Sign-In failed.');
+    expect(controller.errorMessage, contains('signin failed'));
+    expect(controller.errorMessage, contains('README.md'));
+  });
+
+  test('controller reports an empty inbox after sign-in', () async {
+    final controller = MailCheckerController(
+      googleSignInFactory: () =>
+          const _FakeSignInClient(account: _FakeMailCheckerAccount()),
+      loadInboxAction: (_) async => const <InboxEmail>[],
+    );
+
+    await controller.signIn();
+
+    expect(controller.isSignedIn, isTrue);
+    expect(controller.isBusy, isFalse);
+    expect(controller.emails, isEmpty);
+    expect(
+      controller.statusMessage,
+      'Signed in successfully, but the inbox preview is empty.',
+    );
+  });
+
+  test('controller loads inbox after successful sign-in', () async {
+    final emails = [
+      const InboxEmail(
+        subject: 'Subject',
+        from: 'sender@example.com',
+        snippet: 'Preview',
+      ),
+    ];
+    final controller = MailCheckerController(
+      googleSignInFactory: () =>
+          const _FakeSignInClient(account: _FakeMailCheckerAccount()),
+      loadInboxAction: (_) async => emails,
+    );
+
+    await controller.signIn();
+
+    expect(controller.isSignedIn, isTrue);
+    expect(controller.isBusy, isFalse);
+    expect(controller.emails, emails);
+    expect(controller.statusMessage, 'Loaded 1 Gmail preview messages.');
+  });
+
+  test('controller default Gmail loader lists ids and parses message metadata', () async {
+    final gmailApi = _FakeGmailApi(
+      messages: <gmail.Message>[
+        gmail.Message()..id = 'message-1',
+        gmail.Message(),
+        gmail.Message()..id = 'message-2',
+      ],
+      messagesById: <String, gmail.Message>{
+        'message-1': _gmailMessage(
+          from: 'sender@example.com',
+          subject: 'Subject',
+          snippet: 'Preview',
+        ),
+        'message-2': _gmailMessage(subject: 'Subject only'),
+      },
+    );
+    final controller = MailCheckerController(
+      googleSignInFactory: () =>
+          const _FakeSignInClient(account: _FakeMailCheckerAccount()),
+      gmailApiFactory: (_) => gmailApi,
+    );
+
+    await controller.signIn();
+
+    expect(controller.isSignedIn, isTrue);
+    expect(controller.emails, const <InboxEmail>[
+      InboxEmail(
+        subject: 'Subject',
+        from: 'sender@example.com',
+        snippet: 'Preview',
+      ),
+      InboxEmail(
+        subject: 'Subject only',
+        from: '(Unknown sender)',
+        snippet: '',
+      ),
+    ]);
+    expect(controller.statusMessage, 'Loaded 2 Gmail preview messages.');
+    expect(gmailApi.requestedMaxResults, 3);
+    expect(gmailApi.loadedMessageIds, <String>['message-1', 'message-2']);
+  });
+
+  test('InboxEmail compares by value', () {
+    const first = InboxEmail(
+      subject: 'Subject',
+      from: 'sender@example.com',
+      snippet: 'Preview',
+    );
+    const second = InboxEmail(
+      subject: 'Subject',
+      from: 'sender@example.com',
+      snippet: 'Preview',
+    );
+
+    expect(first, second);
+    expect(first.hashCode, second.hashCode);
+  });
+
+  test('controller reports Gmail loading errors after sign-in', () async {
+    final controller = MailCheckerController(
+      googleSignInFactory: () =>
+          const _FakeSignInClient(account: _FakeMailCheckerAccount()),
+      loadInboxAction: (_) async => throw Exception('boom'),
+    );
+
+    await controller.signIn();
+
+    expect(controller.isSignedIn, isTrue);
+    expect(controller.isBusy, isFalse);
+    expect(controller.emails, isEmpty);
+    expect(
+      controller.statusMessage,
+      'Signed in, but Gmail loading failed.',
+    );
+    expect(controller.errorMessage, contains('boom'));
+  });
+
+  test('controller signs out successfully', () async {
+    final fakeClient = const _FakeSignInClient(
+      account: _FakeMailCheckerAccount(),
+    );
+    final controller = MailCheckerController(
+      googleSignInFactory: () => fakeClient,
+      loadInboxAction: (_) async => const <InboxEmail>[],
+    );
+
+    await controller.signIn();
     await controller.signOut();
 
     expect(controller.isSignedIn, isFalse);
-    expect(controller.currentUser, isNull);
+    expect(controller.isBusy, isFalse);
     expect(controller.emails, isEmpty);
     expect(
-      controller.errorMessage,
-      'Unable to access Gmail right now. Please confirm Google Sign-In is configured for this app and try again.',
+      controller.statusMessage,
+      'Signed out. Sign in again to reload Gmail.',
     );
   });
 
-  test('GoogleSignInAuthProvider keeps Gmail readonly scope and delegates sign out', () async {
-    final FakeGoogleSignInGateway gateway = FakeGoogleSignInGateway();
-    final GoogleSignInAuthProvider provider = GoogleSignInAuthProvider(
-      gateway: gateway,
+  test('controller reports Google sign-out failures', () async {
+    final fakeClient = const _FakeSignInClient(
+      account: _FakeMailCheckerAccount(),
+      signOutError: 'signout failed',
     );
-
-    expect(
-      FlutterGoogleSignInGateway.defaultScopes,
-      contains(gmail.GmailApi.gmailReadonlyScope),
-    );
-    expect(await provider.signIn(), isNull);
-    expect(await provider.signInSilently(), isNull);
-
-    await provider.signOut();
-
-    expect(gateway.signOutCalls, 1);
-  });
-
-  test('controller keeps authenticated user and shows error when sign-in fetch fails', () async {
-    final FakeGoogleUserSession user = FakeGoogleUserSession(
-      email: 'alice@example.com',
-      displayName: 'Alice',
-    );
-    final FakeGmailService gmailService = FakeGmailService(
-      emails: const <MailMessageSummary>[],
-      throwOnFetch: true,
-    );
-    final MailCheckerController controller = MailCheckerController(
-      authProvider: FakeGoogleAuthProvider(signInUser: user),
-      gmailService: gmailService,
+    final controller = MailCheckerController(
+      googleSignInFactory: () => fakeClient,
+      loadInboxAction: (_) async => const <InboxEmail>[],
     );
 
     await controller.signIn();
+    await controller.signOut();
 
     expect(controller.isSignedIn, isTrue);
-    expect(controller.currentUser?.email, 'alice@example.com');
+    expect(controller.isBusy, isFalse);
     expect(controller.emails, isEmpty);
     expect(
-      controller.errorMessage,
-      'Unable to access Gmail right now. Please confirm Google Sign-In is configured for this app and try again.',
+      controller.statusMessage,
+      'Google sign-out failed. Try again.',
     );
-  });
-
-  test('controller keeps authenticated user and shows error when silent sign-in fetch fails', () async {
-    final FakeGoogleUserSession user = FakeGoogleUserSession(
-      email: 'alice@example.com',
-      displayName: 'Alice',
-    );
-    final MailCheckerController controller = MailCheckerController(
-      authProvider: FakeGoogleAuthProvider(silentUser: user),
-      gmailService: FakeGmailService(
-        emails: const <MailMessageSummary>[],
-        throwOnFetch: true,
-      ),
-    );
-
-    await controller.initialize();
-
-    expect(controller.isSignedIn, isTrue);
-    expect(controller.currentUser?.email, 'alice@example.com');
-    expect(controller.emails, isEmpty);
-    expect(
-      controller.errorMessage,
-      'Unable to access Gmail right now. Please confirm Google Sign-In is configured for this app and try again.',
-    );
-  });
-
-  test('controller keeps existing emails and shows error when refresh fails', () async {
-    final FakeGoogleAuthProvider authProvider = FakeGoogleAuthProvider(
-      signInUser: FakeGoogleUserSession(
-        email: 'alice@example.com',
-        displayName: 'Alice',
-      ),
-    );
-    final FakeGmailService gmailService = FakeGmailService(
-      emails: const <MailMessageSummary>[
-        MailMessageSummary(
-          sender: 'team@example.com',
-          subject: 'Hello',
-          preview: 'Welcome to Gmail.',
-        ),
-      ],
-    );
-    final MailCheckerController controller = MailCheckerController(
-      authProvider: authProvider,
-      gmailService: gmailService,
-    );
-
-    await controller.signIn();
-    gmailService.throwOnFetch = true;
-
-    await controller.refreshEmails();
-
-    expect(controller.isSignedIn, isTrue);
-    expect(controller.currentUser?.email, 'alice@example.com');
-    expect(controller.emails, hasLength(1));
-    expect(
-      controller.errorMessage,
-      'Unable to access Gmail right now. Please confirm Google Sign-In is configured for this app and try again.',
-    );
+    expect(controller.errorMessage, contains('signout failed'));
   });
 }
 
-class TestApp extends StatelessWidget {
-  const TestApp({super.key, required this.child});
-
-  final Widget child;
+class _FakeMailCheckerAccount implements MailCheckerAccount {
+  const _FakeMailCheckerAccount();
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(home: child);
+  Future<Map<String, String>> get authHeaders async => const {};
+}
+
+class _FakeSignInClient implements MailCheckerSignInClient {
+  const _FakeSignInClient({
+    this.account,
+    this.signInError,
+    this.signOutError,
+  });
+
+  final MailCheckerAccount? account;
+  final String? signInError;
+  final String? signOutError;
+
+  @override
+  Future<MailCheckerAccount?> signIn() async {
+    if (signInError != null) {
+      throw Exception(signInError);
+    }
+    return account;
   }
-}
-
-Future<void> _noop() async {}
-
-class FakeGoogleAuthProvider implements GoogleAuthProvider {
-  FakeGoogleAuthProvider({this.silentUser, this.signInUser});
-
-  GoogleUserSession? silentUser;
-  GoogleUserSession? signInUser;
-  bool throwOnSignOut = false;
-
-  @override
-  Future<GoogleUserSession?> signIn() async => signInUser;
-
-  @override
-  Future<GoogleUserSession?> signInSilently() async => silentUser;
 
   @override
   Future<void> signOut() async {
-    if (throwOnSignOut) {
-      throw Exception('sign out failed');
+    if (signOutError != null) {
+      throw Exception(signOutError);
     }
   }
 }
 
-class FakeGoogleUserSession implements GoogleUserSession {
-  FakeGoogleUserSession({
-    required this.email,
-    this.displayName,
-    this.headers = const <String, String>{'Authorization': '******'},
-  });
+class _FakeGmailApi implements MailCheckerGmailApi {
+  _FakeGmailApi({
+    required List<gmail.Message> messages,
+    required this.messagesById,
+  }) : listResponse = gmail.ListMessagesResponse()..messages = messages;
+
+  final gmail.ListMessagesResponse listResponse;
+  final Map<String, gmail.Message> messagesById;
+  final List<String> loadedMessageIds = <String>[];
+  int? requestedMaxResults;
 
   @override
-  final String? displayName;
+  Future<gmail.Message> getMessage(String id) async {
+    loadedMessageIds.add(id);
+    return messagesById[id] ?? (throw ArgumentError.value(id, 'id'));
+  }
 
   @override
-  final String email;
-
-  final Map<String, String> headers;
-
-  @override
-  Future<Map<String, String>> get authHeaders async => headers;
-}
-
-class FakeGmailService extends GmailService {
-  FakeGmailService({required this.emails, this.throwOnFetch = false});
-
-  final List<MailMessageSummary> emails;
-  bool throwOnFetch;
-
-  @override
-  Future<List<MailMessageSummary>> fetchRecentEmails(
-    GoogleUserSession account,
-  ) async {
-    if (throwOnFetch) {
-      throw Exception('fetch failed');
-    }
-    return emails;
+  Future<gmail.ListMessagesResponse> listInboxMessages({
+    required int maxResults,
+  }) async {
+    requestedMaxResults = maxResults;
+    return listResponse;
   }
 }
 
-class FakeGoogleSignInGateway implements GoogleSignInGateway {
-  int signOutCalls = 0;
+gmail.Message _gmailMessage({
+  String? from,
+  String? subject,
+  String? snippet,
+}) {
+  final headers = <gmail.MessagePartHeader>[
+    if (from != null)
+      gmail.MessagePartHeader()
+        ..name = 'From'
+        ..value = from,
+    if (subject != null)
+      gmail.MessagePartHeader()
+        ..name = 'Subject'
+        ..value = subject,
+  ];
 
-  @override
-  Future<GoogleSignInAccount?> signIn() async => null;
-
-  @override
-  Future<GoogleSignInAccount?> signInSilently() async => null;
-
-  @override
-  Future<void> signOut() async {
-    signOutCalls++;
-  }
+  return gmail.Message()
+    ..snippet = snippet
+    ..payload = (gmail.MessagePart()..headers = headers);
 }

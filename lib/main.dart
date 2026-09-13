@@ -1,591 +1,439 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/gmail/v1.dart' as gmail;
 import 'package:http/http.dart' as http;
 
+// This stays optional for the current Android sign-in flow. Only provide it
+// when your Google Cloud setup specifically requires a web OAuth client ID.
+const _defaultServerClientId = String.fromEnvironment(
+  'GOOGLE_SERVER_CLIENT_ID',
+);
+// Keep the preview fixed at three messages for now; at this size, fetching the
+// per-message metadata concurrently keeps the code simple without meaningful
+// Gmail API overhead.
+const _inboxPreviewLimit = 3;
+
+typedef LoadInboxAction = Future<List<InboxEmail>> Function(
+  MailCheckerAccount account,
+);
+typedef GoogleSignInFactory = MailCheckerSignInClient Function();
+typedef GmailApiFactory = MailCheckerGmailApi Function(http.Client client);
+
 void main() {
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
-  MyApp({super.key, MailCheckerController? controller})
-    : controller = controller ?? MailCheckerController();
+class MyApp extends StatefulWidget {
+  const MyApp({super.key, this.controller});
 
-  final MailCheckerController controller;
+  final MailCheckerController? controller;
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late final MailCheckerController _controller =
+      widget.controller ?? MailCheckerController();
+
+  bool get _ownsController => widget.controller == null;
+
+  @override
+  void dispose() {
+    if (_ownsController) {
+      _controller.dispose();
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Mail Checker',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
       ),
-      home: MailCheckerScreen(controller: controller),
+      home: MailCheckerHomePage(controller: _controller),
     );
   }
 }
 
-class MailCheckerScreen extends StatefulWidget {
-  const MailCheckerScreen({super.key, required this.controller});
+class MailCheckerHomePage extends StatelessWidget {
+  const MailCheckerHomePage({super.key, required this.controller});
 
   final MailCheckerController controller;
 
   @override
-  State<MailCheckerScreen> createState() => _MailCheckerScreenState();
-}
-
-class _MailCheckerScreenState extends State<MailCheckerScreen> {
-  @override
-  void initState() {
-    super.initState();
-    unawaited(widget.controller.initialize());
-  }
-
-  @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: widget.controller,
+      animation: controller,
       builder: (context, _) {
-        return MailCheckerHomePage(
-          displayName:
-              widget.controller.currentUser?.displayName ??
-              widget.controller.currentUser?.email,
-          emails: widget.controller.emails,
-          errorMessage: widget.controller.errorMessage,
-          isLoading: widget.controller.isLoading,
-          isSignedIn: widget.controller.isSignedIn,
-          onRefresh: widget.controller.refreshEmails,
-          onSignIn: widget.controller.signIn,
-          onSignOut: widget.controller.signOut,
+        return Scaffold(
+          appBar: AppBar(
+            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+            title: const Text('Mail Checker'),
+          ),
+          body: ListView(
+            padding: const EdgeInsets.all(24),
+            children: [
+              Text(
+                'Sign in with Google to load your Gmail inbox.',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                controller.configurationSummary,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 24),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  FilledButton.icon(
+                    onPressed: controller.isBusy ? null : controller.signIn,
+                    icon: const Icon(Icons.login),
+                    label: Text(
+                      controller.isSignedIn
+                          ? 'Refresh inbox'
+                          : 'Sign in with Google',
+                    ),
+                  ),
+                  if (controller.isSignedIn)
+                    OutlinedButton(
+                      onPressed: controller.isBusy ? null : controller.signOut,
+                      child: const Text('Sign out'),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (controller.isBusy)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 16),
+                  child: LinearProgressIndicator(),
+                ),
+              Text(controller.statusMessage),
+              if (controller.errorMessage case final error?) ...[
+                const SizedBox(height: 12),
+                Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    error,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
+              ],
+              if (controller.emails.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                Text(
+                  'Inbox Preview',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 12),
+                for (final email in controller.emails)
+                  Card(
+                    child: ListTile(
+                      title: Text(email.subject),
+                      subtitle: Text('${email.from}\n${email.snippet}'),
+                      isThreeLine: true,
+                    ),
+                  ),
+              ],
+            ],
+          ),
         );
       },
     );
   }
 }
 
-class MailCheckerHomePage extends StatelessWidget {
-  const MailCheckerHomePage({
-    super.key,
-    required this.isSignedIn,
-    required this.isLoading,
-    required this.emails,
-    required this.onSignIn,
-    required this.onSignOut,
-    required this.onRefresh,
-    this.displayName,
-    this.errorMessage,
+abstract interface class MailCheckerAccount {
+  Future<Map<String, String>> get authHeaders;
+}
+
+abstract interface class MailCheckerSignInClient {
+  Future<MailCheckerAccount?> signIn();
+
+  Future<void> signOut();
+}
+
+abstract interface class MailCheckerGmailApi {
+  Future<gmail.ListMessagesResponse> listInboxMessages({
+    required int maxResults,
   });
 
-  final String? displayName;
-  final List<MailMessageSummary> emails;
-  final String? errorMessage;
-  final bool isLoading;
-  final bool isSignedIn;
-  final Future<void> Function() onRefresh;
-  final Future<void> Function() onSignIn;
-  final Future<void> Function() onSignOut;
+  Future<gmail.Message> getMessage(String id);
+}
+
+class GoogleMailCheckerAccount implements MailCheckerAccount {
+  GoogleMailCheckerAccount(this._account);
+
+  final GoogleSignInAccount _account;
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('Mail Checker'),
-        actions: [
-          if (isSignedIn)
-            IconButton(
-              onPressed: isLoading ? null : () => unawaited(onSignOut()),
-              tooltip: 'Logout',
-              icon: const Icon(Icons.logout),
-            ),
-        ],
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            if (isLoading) const LinearProgressIndicator(),
-            Expanded(
-              child: isSignedIn
-                  ? _InboxView(
-                      displayName: displayName,
-                      emails: emails,
-                      errorMessage: errorMessage,
-                      isLoading: isLoading,
-                      onRefresh: onRefresh,
-                    )
-                  : _SignedOutView(
-                      errorMessage: errorMessage,
-                      isLoading: isLoading,
-                      onSignIn: onSignIn,
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
+  Future<Map<String, String>> get authHeaders => _account.authHeaders;
+}
+
+class GoogleMailCheckerSignInClient implements MailCheckerSignInClient {
+  GoogleMailCheckerSignInClient({required String serverClientId})
+      : _googleSignIn = GoogleSignIn(
+          scopes: <String>[gmail.GmailApi.gmailReadonlyScope],
+          serverClientId: serverClientId.isEmpty ? null : serverClientId,
+        );
+
+  final GoogleSignIn _googleSignIn;
+
+  @override
+  Future<MailCheckerAccount?> signIn() async {
+    final account = await _googleSignIn.signIn();
+    if (account == null) {
+      return null;
+    }
+    return GoogleMailCheckerAccount(account);
+  }
+
+  @override
+  Future<void> signOut() {
+    return _googleSignIn.signOut();
   }
 }
 
-class _SignedOutView extends StatelessWidget {
-  const _SignedOutView({
-    required this.errorMessage,
-    required this.isLoading,
-    required this.onSignIn,
-  });
+class GoogleMailCheckerGmailApi implements MailCheckerGmailApi {
+  GoogleMailCheckerGmailApi(http.Client client)
+    : _api = gmail.GmailApi(client);
 
-  final String? errorMessage;
-  final bool isLoading;
-  final Future<void> Function() onSignIn;
+  final gmail.GmailApi _api;
 
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.mail_outline, size: 72),
-            const SizedBox(height: 16),
-            Text(
-              'Sign in with Google to load recent emails from your Gmail inbox.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            if (errorMessage != null) ...[
-              const SizedBox(height: 16),
-              Text(
-                errorMessage!,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: isLoading ? null : () => unawaited(onSignIn()),
-              icon: const Icon(Icons.login),
-              label: const Text('Sign in with Google'),
-            ),
-          ],
-        ),
-      ),
-    );
+  Future<gmail.ListMessagesResponse> listInboxMessages({
+    required int maxResults,
+  }) {
+    return _api.users.messages.list('me', maxResults: maxResults);
   }
-}
-
-class _InboxView extends StatelessWidget {
-  const _InboxView({
-    required this.displayName,
-    required this.emails,
-    required this.errorMessage,
-    required this.isLoading,
-    required this.onRefresh,
-  });
-
-  final String? displayName;
-  final List<MailMessageSummary> emails;
-  final String? errorMessage;
-  final bool isLoading;
-  final Future<void> Function() onRefresh;
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  displayName == null
-                      ? 'Recent inbox messages'
-                      : 'Signed in as $displayName',
-                  style: Theme.of(context).textTheme.titleMedium,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              IconButton(
-                onPressed: isLoading ? null : () => unawaited(onRefresh()),
-                tooltip: 'Refresh emails',
-                icon: const Icon(Icons.refresh),
-              ),
-            ],
-          ),
-        ),
-        if (errorMessage != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              errorMessage!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ),
-        Expanded(
-          child: emails.isEmpty
-              ? const Center(
-                  child: Text('No recent emails were found in your inbox.'),
-                )
-              : ListView.separated(
-                  itemCount: emails.length,
-                  separatorBuilder: (context, index) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final email = emails[index];
-                    return ListTile(
-                      leading: const CircleAvatar(child: Icon(Icons.mail)),
-                      title: Text(
-                        email.subject,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            email.sender,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            email.preview,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                      isThreeLine: true,
-                    );
-                  },
-                ),
-        ),
-      ],
+  Future<gmail.Message> getMessage(String id) {
+    return _api.users.messages.get(
+      'me',
+      id,
+      format: 'metadata',
+      metadataHeaders: <String>['From', 'Subject'],
     );
   }
 }
 
 class MailCheckerController extends ChangeNotifier {
   MailCheckerController({
-    GoogleAuthProvider? authProvider,
-    GmailService? gmailService,
-  }) : _authProvider = authProvider ?? GoogleSignInAuthProvider(),
-       _gmailService = gmailService ?? const GmailService();
+    LoadInboxAction? loadInboxAction,
+    GoogleSignInFactory? googleSignInFactory,
+    GmailApiFactory? gmailApiFactory,
+    String serverClientId = _defaultServerClientId,
+  })  : _loadInboxAction = loadInboxAction,
+        _serverClientId = serverClientId,
+        _googleSignInFactory = googleSignInFactory ??
+            (() => GoogleMailCheckerSignInClient(
+                  serverClientId: serverClientId,
+                )),
+        _gmailApiFactory =
+            gmailApiFactory ??
+            ((client) => GoogleMailCheckerGmailApi(client));
 
-  final GoogleAuthProvider _authProvider;
-  final GmailService _gmailService;
+  final LoadInboxAction? _loadInboxAction;
+  final GoogleSignInFactory _googleSignInFactory;
+  final GmailApiFactory _gmailApiFactory;
+  final String _serverClientId;
 
-  List<MailMessageSummary> _emails = const [];
+  MailCheckerSignInClient? _signInClient;
+  bool _isBusy = false;
+  String _statusMessage =
+      'Complete the Google Cloud setup in README.md, then sign in.';
   String? _errorMessage;
-  bool _isLoading = false;
-  GoogleUserSession? _currentUser;
+  List<InboxEmail> _emails = const <InboxEmail>[];
+  MailCheckerAccount? _account;
 
-  List<MailMessageSummary> get emails => List.unmodifiable(_emails);
+  bool get isBusy => _isBusy;
+  bool get isSignedIn => _account != null;
+  String get statusMessage => _statusMessage;
   String? get errorMessage => _errorMessage;
-  GoogleUserSession? get currentUser => _currentUser;
-  bool get isLoading => _isLoading;
-  bool get isSignedIn => _currentUser != null;
+  List<InboxEmail> get emails => _emails;
+  String get configurationSummary => _serverClientId.isEmpty
+      ? 'Optional: pass --dart-define=GOOGLE_SERVER_CLIENT_ID=<web-client-id> '
+          'only if your Google Sign-In setup requires a web OAuth client ID.'
+      : 'Using the optional Google server client ID provided through '
+          'dart-define.';
 
-  Future<void> initialize() async {
-    _isLoading = true;
-    notifyListeners();
-
-    try {
-      final GoogleUserSession? account = await _authProvider.signInSilently();
-      if (account == null) {
-        _clearSession();
-      } else {
-        _currentUser = account;
-        _emails = const [];
-
-        try {
-          await _loadEmailsFor(account);
-        } catch (error, stackTrace) {
-          _logError(
-            'Loading Gmail messages after silent sign-in failed',
-            error,
-            stackTrace,
-          );
-          _errorMessage = _friendlyError();
-        }
-      }
-    } catch (error, stackTrace) {
-      _logError('Silent Google sign-in failed', error, stackTrace);
-      _clearSession();
-      _errorMessage = _friendlyError();
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
+  MailCheckerSignInClient get _client =>
+      _signInClient ??= _googleSignInFactory();
 
   Future<void> signIn() async {
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-
-    try {
-      final GoogleUserSession? account = await _authProvider.signIn();
-      if (account != null) {
-        _currentUser = account;
-        _emails = const [];
-        await _loadEmailsFor(account);
-      } else {
-        _clearSession();
-      }
-    } catch (error, stackTrace) {
-      _logError('Google sign-in failed', error, stackTrace);
-      _errorMessage = _friendlyError();
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> refreshEmails() async {
-    final GoogleUserSession? account = _currentUser;
-    if (account == null) {
+    if (_isBusy) {
       return;
     }
 
-    _isLoading = true;
+    if (_account != null) {
+      return _refreshInbox(_account!);
+    }
+
+    _isBusy = true;
+    _statusMessage = 'Opening Google Sign-In…';
     _errorMessage = null;
     notifyListeners();
 
+    MailCheckerAccount? account;
     try {
-      await _loadEmailsFor(account);
-    } catch (error, stackTrace) {
-      _logError('Refreshing Gmail messages failed', error, stackTrace);
-      _errorMessage = _friendlyError();
-    } finally {
-      _isLoading = false;
+      account = await _client.signIn();
+    } catch (error) {
+      _account = null;
+      _emails = const <InboxEmail>[];
+      _errorMessage =
+          '$error\n\nVerify the package name, SHA-1 fingerprint, Gmail API, '
+          'and OAuth clients described in README.md.';
+      _statusMessage = 'Google Sign-In failed.';
+      _isBusy = false;
       notifyListeners();
+      return;
     }
+
+    if (account == null) {
+      _account = null;
+      _emails = const <InboxEmail>[];
+      _statusMessage = 'Google Sign-In was cancelled.';
+      _isBusy = false;
+      notifyListeners();
+      return;
+    }
+
+    _account = account;
+    await _refreshInbox(account);
   }
 
   Future<void> signOut() async {
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-    String? errorMessage;
-
-    try {
-      await _authProvider.signOut();
-    } catch (error, stackTrace) {
-      _logError('Google sign-out failed', error, stackTrace);
-      errorMessage = _friendlyError();
-    } finally {
-      _clearSession();
-      _errorMessage = errorMessage;
-      _isLoading = false;
-      notifyListeners();
+    if (_isBusy) {
+      return;
     }
-  }
 
-  Future<void> _loadEmailsFor(GoogleUserSession account) async {
-    _emails = await _gmailService.fetchRecentEmails(account);
+    _isBusy = true;
     _errorMessage = null;
-  }
-
-  void _clearSession() {
-    _currentUser = null;
-    _emails = const [];
-    _errorMessage = null;
-  }
-
-  static String _friendlyError() {
-    return 'Unable to access Gmail right now. Please confirm Google Sign-In is configured for this app and try again.';
-  }
-
-  static void _logError(String context, Object error, StackTrace stackTrace) {
-    debugPrint('$context: $error');
-    debugPrintStack(stackTrace: stackTrace);
-  }
-}
-
-class GmailService {
-  const GmailService();
-
-  Future<List<MailMessageSummary>> fetchRecentEmails(
-    GoogleUserSession account,
-  ) async {
-    final _GoogleAuthClient client = _GoogleAuthClient(await account.authHeaders);
+    _statusMessage = 'Signing out…';
+    notifyListeners();
 
     try {
-      final gmail.GmailApi gmailApi = gmail.GmailApi(client);
-      final gmail.ListMessagesResponse response = await gmailApi.users.messages
-          .list(
-            'me',
-            labelIds: <String>['INBOX'],
-            maxResults: 5,
-          );
+      await _client.signOut();
+      _account = null;
+      _emails = const <InboxEmail>[];
+      _statusMessage = 'Signed out. Sign in again to reload Gmail.';
+    } catch (error) {
+      _errorMessage = '$error';
+      _statusMessage = 'Google sign-out failed. Try again.';
+    }
 
-      final Iterable<String> messageIds = (response.messages ?? const <gmail.Message>[])
-          .map((gmail.Message reference) => reference.id)
-          .whereType<String>();
-      final List<gmail.Message> messages = await Future.wait(
-        messageIds.map(
-          (String id) => gmailApi.users.messages.get(
-            'me',
-            id,
-            format: 'metadata',
-            metadataHeaders: <String>['From', 'Subject'],
-          ),
-        ),
+    _isBusy = false;
+    notifyListeners();
+  }
+
+  Future<void> _refreshInbox(MailCheckerAccount account) async {
+    _isBusy = true;
+    _errorMessage = null;
+    _statusMessage = 'Loading Gmail inbox…';
+    notifyListeners();
+
+    try {
+      _emails = await (_loadInboxAction?.call(account) ?? _loadInbox(account));
+      _statusMessage = _emails.isEmpty
+          ? 'Signed in successfully, but the inbox preview is empty.'
+          : 'Loaded ${_emails.length} Gmail preview messages.';
+    } catch (error) {
+      _emails = const <InboxEmail>[];
+      _errorMessage =
+          '$error\n\nVerify the package name, SHA-1 fingerprint, Gmail API, '
+          'and OAuth clients described in README.md.';
+      _statusMessage = 'Signed in, but Gmail loading failed.';
+    }
+
+    _isBusy = false;
+    notifyListeners();
+  }
+
+  Future<List<InboxEmail>> _loadInbox(MailCheckerAccount account) async {
+    final authHeaders = await account.authHeaders;
+    final client = GoogleAuthClient(authHeaders);
+    try {
+      final api = _gmailApiFactory(client);
+      final response = await api.listInboxMessages(
+        maxResults: _inboxPreviewLimit,
       );
-
-      return messages.map(_toSummary).toList(growable: false);
+      final messageIds = [
+        for (final message in response.messages ?? const <gmail.Message>[])
+          if (message.id != null) message.id!,
+      ];
+      return Future.wait(messageIds.map((id) => _loadMessage(api, id)));
     } finally {
       client.close();
     }
   }
 
-  static MailMessageSummary _toSummary(gmail.Message message) {
-    final String sender = _headerValue(message, 'From') ?? 'Unknown sender';
-    final String subject = _headerValue(message, 'Subject') ?? 'No subject';
-    final String preview = switch (message.snippet?.trim()) {
-      final String snippet when snippet.isNotEmpty => snippet,
-      _ => 'No preview available',
-    };
+  Future<InboxEmail> _loadMessage(MailCheckerGmailApi api, String id) async {
+    final message = await api.getMessage(id);
+    return _toInboxEmail(message);
+  }
 
-    return MailMessageSummary(
-      sender: sender,
-      subject: subject,
-      preview: preview,
+  InboxEmail _toInboxEmail(gmail.Message message) {
+    final headers = <String, String>{
+      for (final header
+          in message.payload?.headers ?? const <gmail.MessagePartHeader>[])
+        if (header.name != null && header.value != null)
+          header.name!: header.value!,
+    };
+    return InboxEmail(
+      subject: headers['Subject'] ?? '(No subject)',
+      from: headers['From'] ?? '(Unknown sender)',
+      snippet: message.snippet ?? '',
     );
   }
-
-  static String? _headerValue(gmail.Message message, String name) {
-    for (final gmail.MessagePartHeader header in message.payload?.headers ?? const []) {
-      if (header.name?.toLowerCase() == name.toLowerCase()) {
-        return header.value;
-      }
-    }
-    return null;
-  }
 }
 
-class MailMessageSummary {
-  const MailMessageSummary({
-    required this.sender,
+@immutable
+class InboxEmail {
+  const InboxEmail({
     required this.subject,
-    required this.preview,
+    required this.from,
+    required this.snippet,
   });
 
-  final String sender;
   final String subject;
-  final String preview;
+  final String from;
+  final String snippet;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is InboxEmail &&
+            subject == other.subject &&
+            from == other.from &&
+            snippet == other.snippet;
+  }
+
+  @override
+  int get hashCode => Object.hash(subject, from, snippet);
 }
 
-class _GoogleAuthClient extends http.BaseClient {
-  _GoogleAuthClient(this._headers);
+class GoogleAuthClient extends http.BaseClient {
+  GoogleAuthClient(this._headers);
 
   final Map<String, String> _headers;
-  final http.Client _client = http.Client();
+  final http.Client _inner = http.Client();
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) {
     request.headers.addAll(_headers);
-    return _client.send(request);
+    return _inner.send(request);
   }
 
   @override
   void close() {
-    _client.close();
-  }
-}
-
-abstract class GoogleAuthProvider {
-  Future<GoogleUserSession?> signIn();
-  Future<GoogleUserSession?> signInSilently();
-  Future<void> signOut();
-}
-
-abstract class GoogleUserSession {
-  String? get displayName;
-  String get email;
-  Future<Map<String, String>> get authHeaders;
-}
-
-class GoogleSignInAuthProvider implements GoogleAuthProvider {
-  GoogleSignInAuthProvider({GoogleSignInGateway? gateway})
-    : _gateway = gateway ?? FlutterGoogleSignInGateway();
-
-  final GoogleSignInGateway _gateway;
-
-  @override
-  Future<GoogleUserSession?> signIn() async {
-    final GoogleSignInAccount? account = await _gateway.signIn();
-    if (account == null) {
-      return null;
-    }
-    return GoogleSignInSession(account);
-  }
-
-  @override
-  Future<GoogleUserSession?> signInSilently() async {
-    final GoogleSignInAccount? account = await _gateway.signInSilently();
-    if (account == null) {
-      return null;
-    }
-    return GoogleSignInSession(account);
-  }
-
-  @override
-  Future<void> signOut() async {
-    await _gateway.signOut();
-  }
-}
-
-class GoogleSignInSession implements GoogleUserSession {
-  GoogleSignInSession(this._account);
-
-  final GoogleSignInAccount _account;
-
-  @override
-  Future<Map<String, String>> get authHeaders => _account.authHeaders;
-
-  @override
-  String? get displayName => _account.displayName;
-
-  @override
-  String get email => _account.email;
-}
-
-abstract class GoogleSignInGateway {
-  Future<GoogleSignInAccount?> signIn();
-  Future<GoogleSignInAccount?> signInSilently();
-  Future<void> signOut();
-}
-
-class FlutterGoogleSignInGateway implements GoogleSignInGateway {
-  FlutterGoogleSignInGateway({
-    GoogleSignIn? googleSignIn,
-    List<String> scopes = defaultScopes,
-  }) : _googleSignIn = googleSignIn ?? GoogleSignIn(scopes: scopes),
-       scopes = List.unmodifiable(scopes);
-
-  static const List<String> defaultScopes = <String>[
-    gmail.GmailApi.gmailReadonlyScope,
-  ];
-
-  final GoogleSignIn _googleSignIn;
-
-  final List<String> scopes;
-
-  @override
-  Future<GoogleSignInAccount?> signIn() => _googleSignIn.signIn();
-
-  @override
-  Future<GoogleSignInAccount?> signInSilently() => _googleSignIn.signInSilently();
-
-  @override
-  Future<void> signOut() async {
-    await _googleSignIn.signOut();
+    _inner.close();
+    super.close();
   }
 }
