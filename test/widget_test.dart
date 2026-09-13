@@ -69,6 +69,23 @@ void main() {
     expect(controller.statusMessage, 'Loaded 1 Gmail messages.');
   });
 
+
+  test('InboxEmail compares by value', () {
+    const first = InboxEmail(
+      subject: 'Subject',
+      from: 'sender@example.com',
+      snippet: 'Preview',
+    );
+    const second = InboxEmail(
+      subject: 'Subject',
+      from: 'sender@example.com',
+      snippet: 'Preview',
+    );
+
+    expect(first, second);
+    expect(first.hashCode, second.hashCode);
+  });
+
   test('controller reports Gmail loading errors after sign-in', () async {
     final controller = MailCheckerController(
       signInAction: () async => const _FakeMailCheckerAccount(),

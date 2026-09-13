@@ -154,16 +154,14 @@ class GoogleMailCheckerAccount implements MailCheckerAccount {
 
 class MailCheckerController extends ChangeNotifier {
   MailCheckerController({
-    GoogleSignIn? googleSignIn,
     SignInAction? signInAction,
     SignOutAction? signOutAction,
     LoadInboxAction? loadInboxAction,
-  })  : _googleSignIn = googleSignIn ??
-            GoogleSignIn(
-              scopes: <String>[gmail.GmailApi.gmailReadonlyScope],
-              serverClientId:
-                  _serverClientId.isEmpty ? null : _serverClientId,
-            ),
+  })  : _googleSignIn = GoogleSignIn(
+            scopes: <String>[gmail.GmailApi.gmailReadonlyScope],
+            serverClientId:
+                _serverClientId.isEmpty ? null : _serverClientId,
+          ),
         _signInAction = signInAction,
         _signOutAction = signOutAction,
         _loadInboxAction = loadInboxAction;
@@ -252,17 +250,17 @@ class MailCheckerController extends ChangeNotifier {
 
     _isBusy = true;
     _errorMessage = null;
-    _account = null;
-    _emails = const <InboxEmail>[];
     _statusMessage = 'Signing out…';
     notifyListeners();
 
     try {
       await (_signOutAction?.call() ?? _googleSignIn.signOut());
+      _account = null;
+      _emails = const <InboxEmail>[];
       _statusMessage = 'Signed out. Sign in again to reload Gmail.';
     } catch (error) {
       _errorMessage = '$error';
-      _statusMessage = 'Signed out locally, but Google sign-out failed.';
+      _statusMessage = 'Google sign-out failed.';
     }
 
     _isBusy = false;
