@@ -136,6 +136,105 @@ void main() {
     expect(logoutButton.onPressed, isNull);
     expect(refreshButton.onPressed, isNull);
   });
+
+  test('controller syncs silent sign-in state across initialize calls', () async {
+    final FakeGoogleUserSession user = FakeGoogleUserSession(
+      email: 'alice@example.com',
+      displayName: 'Alice',
+    );
+    final FakeGoogleAuthProvider authProvider = FakeGoogleAuthProvider(
+      silentUser: user,
+    );
+    final FakeGmailService gmailService = FakeGmailService(
+      emails: const <MailMessageSummary>[
+        MailMessageSummary(
+          sender: 'team@example.com',
+          subject: 'Hello',
+          preview: 'Welcome to Gmail.',
+        ),
+      ],
+    );
+    final MailCheckerController controller = MailCheckerController(
+      authProvider: authProvider,
+      gmailService: gmailService,
+    );
+
+    await controller.initialize();
+    expect(controller.isSignedIn, isTrue);
+    expect(controller.currentUser?.email, 'alice@example.com');
+    expect(controller.emails, hasLength(1));
+
+    authProvider.silentUser = null;
+    await controller.initialize();
+    expect(controller.isSignedIn, isFalse);
+    expect(controller.currentUser, isNull);
+    expect(controller.emails, isEmpty);
+  });
+
+  test('controller clears existing session when sign-in is cancelled', () async {
+    final FakeGoogleUserSession user = FakeGoogleUserSession(
+      email: 'alice@example.com',
+      displayName: 'Alice',
+    );
+    final FakeGoogleAuthProvider authProvider = FakeGoogleAuthProvider(
+      signInUser: user,
+    );
+    final MailCheckerController controller = MailCheckerController(
+      authProvider: authProvider,
+      gmailService: FakeGmailService(
+        emails: const <MailMessageSummary>[
+          MailMessageSummary(
+            sender: 'team@example.com',
+            subject: 'Hello',
+            preview: 'Welcome to Gmail.',
+          ),
+        ],
+      ),
+    );
+
+    await controller.signIn();
+    expect(controller.isSignedIn, isTrue);
+
+    authProvider.signInUser = null;
+    await controller.signIn();
+    expect(controller.isSignedIn, isFalse);
+    expect(controller.currentUser, isNull);
+    expect(controller.emails, isEmpty);
+  });
+
+  test('controller clears local session and keeps generic error on sign-out failure', () async {
+    final FakeGoogleAuthProvider authProvider = FakeGoogleAuthProvider(
+      signInUser: FakeGoogleUserSession(
+        email: 'alice@example.com',
+        displayName: 'Alice',
+      ),
+    );
+    final MailCheckerController controller = MailCheckerController(
+      authProvider: authProvider,
+      gmailService: FakeGmailService(
+        emails: const <MailMessageSummary>[
+          MailMessageSummary(
+            sender: 'team@example.com',
+            subject: 'Hello',
+            preview: 'Welcome to Gmail.',
+          ),
+        ],
+      ),
+    );
+
+    await controller.signIn();
+    authProvider.throwOnSignOut = true;
+
+    await controller.signOut();
+
+    expect(controller.isSignedIn, isFalse);
+    expect(controller.currentUser, isNull);
+    expect(controller.emails, isEmpty);
+    expect(
+      controller.errorMessage,
+      'Unable to access Gmail right now. Please confirm Google Sign-In is configured for this app and try again.',
+    );
+  });
 }
 
 class TestApp extends StatelessWidget {
@@ -150,3 +249,56 @@ class TestApp extends StatelessWidget {
 }
 
 Future<void> _noop() async {}
+
+class FakeGoogleAuthProvider implements GoogleAuthProvider {
+  FakeGoogleAuthProvider({this.silentUser, this.signInUser});
+
+  GoogleUserSession? silentUser;
+  GoogleUserSession? signInUser;
+  bool throwOnSignOut = false;
+
+  @override
+  Future<GoogleUserSession?> signIn() async => signInUser;
+
+  @override
+  Future<GoogleUserSession?> signInSilently() async => silentUser;
+
+  @override
+  Future<void> signOut() async {
+    if (throwOnSignOut) {
+      throw Exception('sign out failed');
+    }
+  }
+}
+
+class FakeGoogleUserSession implements GoogleUserSession {
+  FakeGoogleUserSession({
+    required this.email,
+    this.displayName,
+    this.headers = const <String, String>{'Authorization': '******'},
+  });
+
+  @override
+  final String? displayName;
+
+  @override
+  final String email;
+
+  final Map<String, String> headers;
+
+  @override
+  Future<Map<String, String>> get authHeaders async => headers;
+}
+
+class FakeGmailService extends GmailService {
+  FakeGmailService({required this.emails});
+
+  final List<MailMessageSummary> emails;
+
+  @override
+  Future<List<MailMessageSummary>> fetchRecentEmails(
+    GoogleUserSession account,
+  ) async {
+    return emails;
+  }
+}

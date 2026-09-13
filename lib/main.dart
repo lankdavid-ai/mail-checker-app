@@ -270,47 +270,40 @@ class _InboxView extends StatelessWidget {
 
 class MailCheckerController extends ChangeNotifier {
   MailCheckerController({
-    GoogleSignIn? googleSignIn,
+    GoogleAuthProvider? authProvider,
     GmailService? gmailService,
-  }) : _googleSignIn = googleSignIn ?? _defaultGoogleSignIn,
+  }) : _authProvider = authProvider ?? GoogleSignInAuthProvider(),
        _gmailService = gmailService ?? const GmailService();
 
-  static final GoogleSignIn _defaultGoogleSignIn = GoogleSignIn(
-    scopes: <String>[gmail.GmailApi.gmailReadonlyScope],
-  );
-
-  final GoogleSignIn _googleSignIn;
+  final GoogleAuthProvider _authProvider;
   final GmailService _gmailService;
 
   List<MailMessageSummary> _emails = const [];
   String? _errorMessage;
-  bool _isInitialized = false;
   bool _isLoading = false;
-  GoogleSignInAccount? _currentUser;
+  GoogleUserSession? _currentUser;
 
   List<MailMessageSummary> get emails => List.unmodifiable(_emails);
   String? get errorMessage => _errorMessage;
-  GoogleSignInAccount? get currentUser => _currentUser;
+  GoogleUserSession? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   bool get isSignedIn => _currentUser != null;
 
   Future<void> initialize() async {
-    if (_isInitialized) {
-      return;
-    }
-
-    _isInitialized = true;
     _setLoading(true);
 
     try {
-      final GoogleSignInAccount? account = await _googleSignIn.signInSilently();
+      final GoogleUserSession? account = await _authProvider.signInSilently();
       if (account != null) {
         await _loadEmailsFor(account);
       } else {
         _clearSession();
       }
-    } catch (error) {
-      _errorMessage = _friendlyError(error);
+    } catch (error, stackTrace) {
+      _logError('Silent Google sign-in failed', error, stackTrace);
+      _clearSession(notify: false);
+      _errorMessage = _friendlyError();
+      notifyListeners();
     } finally {
       _setLoading(false);
     }
@@ -322,19 +315,22 @@ class MailCheckerController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final GoogleSignInAccount? account = await _googleSignIn.signIn();
+      final GoogleUserSession? account = await _authProvider.signIn();
       if (account != null) {
         await _loadEmailsFor(account);
+      } else {
+        _clearSession();
       }
-    } catch (error) {
-      _errorMessage = _friendlyError(error);
+    } catch (error, stackTrace) {
+      _logError('Google sign-in failed', error, stackTrace);
+      _errorMessage = _friendlyError();
     } finally {
       _setLoading(false);
     }
   }
 
   Future<void> refreshEmails() async {
-    final GoogleSignInAccount? account = _currentUser;
+    final GoogleUserSession? account = _currentUser;
     if (account == null) {
       return;
     }
@@ -345,8 +341,9 @@ class MailCheckerController extends ChangeNotifier {
 
     try {
       await _loadEmailsFor(account);
-    } catch (error) {
-      _errorMessage = _friendlyError(error);
+    } catch (error, stackTrace) {
+      _logError('Refreshing Gmail messages failed', error, stackTrace);
+      _errorMessage = _friendlyError();
     } finally {
       _setLoading(false);
     }
@@ -354,18 +351,21 @@ class MailCheckerController extends ChangeNotifier {
 
   Future<void> signOut() async {
     _setLoading(true);
+    String? errorMessage;
 
     try {
-      await _googleSignIn.signOut();
-      _clearSession();
-    } catch (error) {
-      _errorMessage = _friendlyError(error);
+      await _authProvider.signOut();
+    } catch (error, stackTrace) {
+      _logError('Google sign-out failed', error, stackTrace);
+      errorMessage = _friendlyError();
     } finally {
+      _clearSession(notify: false);
+      _errorMessage = errorMessage;
       _setLoading(false);
     }
   }
 
-  Future<void> _loadEmailsFor(GoogleSignInAccount account) async {
+  Future<void> _loadEmailsFor(GoogleUserSession account) async {
     _currentUser = account;
     _emails = await _gmailService.fetchRecentEmails(account);
     _errorMessage = null;
@@ -377,15 +377,22 @@ class MailCheckerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _clearSession() {
+  void _clearSession({bool notify = true}) {
     _currentUser = null;
     _emails = const [];
     _errorMessage = null;
-    notifyListeners();
+    if (notify) {
+      notifyListeners();
+    }
   }
 
-  static String _friendlyError(Object error) {
-    return 'Unable to access Gmail right now. Please confirm Google Sign-In is configured for this app and try again.\n$error';
+  static String _friendlyError() {
+    return 'Unable to access Gmail right now. Please confirm Google Sign-In is configured for this app and try again.';
+  }
+
+  static void _logError(String context, Object error, StackTrace stackTrace) {
+    debugPrint('$context: $error');
+    debugPrintStack(stackTrace: stackTrace);
   }
 }
 
@@ -393,7 +400,7 @@ class GmailService {
   const GmailService();
 
   Future<List<MailMessageSummary>> fetchRecentEmails(
-    GoogleSignInAccount account,
+    GoogleUserSession account,
   ) async {
     final _GoogleAuthClient client = _GoogleAuthClient(await account.authHeaders);
 
@@ -414,8 +421,7 @@ class GmailService {
           (String id) => gmailApi.users.messages.get(
             'me',
             id,
-            format: 'metadata',
-            metadataHeaders: <String>['From', 'Subject'],
+            format: 'full',
           ),
         ),
       );
@@ -479,4 +485,63 @@ class _GoogleAuthClient extends http.BaseClient {
   void close() {
     _client.close();
   }
+}
+
+abstract class GoogleAuthProvider {
+  Future<GoogleUserSession?> signIn();
+  Future<GoogleUserSession?> signInSilently();
+  Future<void> signOut();
+}
+
+abstract class GoogleUserSession {
+  String? get displayName;
+  String get email;
+  Future<Map<String, String>> get authHeaders;
+}
+
+class GoogleSignInAuthProvider implements GoogleAuthProvider {
+  GoogleSignInAuthProvider()
+    : _googleSignIn = GoogleSignIn(
+        scopes: <String>[gmail.GmailApi.gmailReadonlyScope],
+      );
+
+  final GoogleSignIn _googleSignIn;
+
+  @override
+  Future<GoogleUserSession?> signIn() async {
+    final GoogleSignInAccount? account = await _googleSignIn.signIn();
+    if (account == null) {
+      return null;
+    }
+    return GoogleSignInSession(account);
+  }
+
+  @override
+  Future<GoogleUserSession?> signInSilently() async {
+    final GoogleSignInAccount? account = await _googleSignIn.signInSilently();
+    if (account == null) {
+      return null;
+    }
+    return GoogleSignInSession(account);
+  }
+
+  @override
+  Future<void> signOut() async {
+    await _googleSignIn.signOut();
+  }
+}
+
+class GoogleSignInSession implements GoogleUserSession {
+  GoogleSignInSession(this._account);
+
+  final GoogleSignInAccount _account;
+
+  @override
+  Future<Map<String, String>> get authHeaders => _account.authHeaders;
+
+  @override
+  String? get displayName => _account.displayName;
+
+  @override
+  String get email => _account.email;
 }
