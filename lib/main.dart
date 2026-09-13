@@ -297,12 +297,22 @@ class MailCheckerController extends ChangeNotifier {
 
     try {
       final GoogleUserSession? account = await _authProvider.signInSilently();
-      if (account != null) {
+      if (account == null) {
+        _clearSession();
+      } else {
         _currentUser = account;
         _emails = const [];
-        await _loadEmailsFor(account);
-      } else {
-        _clearSession();
+
+        try {
+          await _loadEmailsFor(account);
+        } catch (error, stackTrace) {
+          _logError(
+            'Loading Gmail messages after silent sign-in failed',
+            error,
+            stackTrace,
+          );
+          _errorMessage = _friendlyError();
+        }
       }
     } catch (error, stackTrace) {
       _logError('Silent Google sign-in failed', error, stackTrace);
@@ -362,14 +372,16 @@ class MailCheckerController extends ChangeNotifier {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
+    String? errorMessage;
 
     try {
       await _authProvider.signOut();
-      _clearSession();
     } catch (error, stackTrace) {
       _logError('Google sign-out failed', error, stackTrace);
-      _errorMessage = _friendlyError();
+      errorMessage = _friendlyError();
     } finally {
+      _clearSession();
+      _errorMessage = errorMessage;
       _isLoading = false;
       notifyListeners();
     }
@@ -421,7 +433,8 @@ class GmailService {
           (String id) => gmailApi.users.messages.get(
             'me',
             id,
-            format: 'full',
+            format: 'metadata',
+            metadataHeaders: <String>['From', 'Subject'],
           ),
         ),
       );

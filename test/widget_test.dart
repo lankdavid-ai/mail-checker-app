@@ -223,7 +223,7 @@ void main() {
     expect(controller.emails, isEmpty);
   });
 
-  test('controller keeps local session and shows generic error on sign-out failure', () async {
+  test('controller clears local session and shows generic error on sign-out failure', () async {
     final FakeGoogleAuthProvider authProvider = FakeGoogleAuthProvider(
       signInUser: FakeGoogleUserSession(
         email: 'alice@example.com',
@@ -248,9 +248,9 @@ void main() {
 
     await controller.signOut();
 
-    expect(controller.isSignedIn, isTrue);
-    expect(controller.currentUser?.email, 'alice@example.com');
-    expect(controller.emails, hasLength(1));
+    expect(controller.isSignedIn, isFalse);
+    expect(controller.currentUser, isNull);
+    expect(controller.emails, isEmpty);
     expect(
       controller.errorMessage,
       'Unable to access Gmail right now. Please confirm Google Sign-In is configured for this app and try again.',
@@ -290,6 +290,30 @@ void main() {
     );
 
     await controller.signIn();
+
+    expect(controller.isSignedIn, isTrue);
+    expect(controller.currentUser?.email, 'alice@example.com');
+    expect(controller.emails, isEmpty);
+    expect(
+      controller.errorMessage,
+      'Unable to access Gmail right now. Please confirm Google Sign-In is configured for this app and try again.',
+    );
+  });
+
+  test('controller keeps authenticated user and shows error when silent sign-in fetch fails', () async {
+    final FakeGoogleUserSession user = FakeGoogleUserSession(
+      email: 'alice@example.com',
+      displayName: 'Alice',
+    );
+    final MailCheckerController controller = MailCheckerController(
+      authProvider: FakeGoogleAuthProvider(silentUser: user),
+      gmailService: FakeGmailService(
+        emails: const <MailMessageSummary>[],
+        throwOnFetch: true,
+      ),
+    );
+
+    await controller.initialize();
 
     expect(controller.isSignedIn, isTrue);
     expect(controller.currentUser?.email, 'alice@example.com');
