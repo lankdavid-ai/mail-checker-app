@@ -1,122 +1,591 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:googleapis/gmail/v1.dart' as gmail;
+import 'package:http/http.dart' as http;
 
 void main() {
-  runApp(const MyApp());
+  runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  MyApp({super.key, MailCheckerController? controller})
+    : controller = controller ?? MailCheckerController();
 
-  // This widget is the root of your application.
+  final MailCheckerController controller;
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Mail Checker',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: MailCheckerScreen(controller: controller),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+class MailCheckerScreen extends StatefulWidget {
+  const MailCheckerScreen({super.key, required this.controller});
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+  final MailCheckerController controller;
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<MailCheckerScreen> createState() => _MailCheckerScreenState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+class _MailCheckerScreenState extends State<MailCheckerScreen> {
+  @override
+  void initState() {
+    super.initState();
+    unawaited(widget.controller.initialize());
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
+    return AnimatedBuilder(
+      animation: widget.controller,
+      builder: (context, _) {
+        return MailCheckerHomePage(
+          displayName:
+              widget.controller.currentUser?.displayName ??
+              widget.controller.currentUser?.email,
+          emails: widget.controller.emails,
+          errorMessage: widget.controller.errorMessage,
+          isLoading: widget.controller.isLoading,
+          isSignedIn: widget.controller.isSignedIn,
+          onRefresh: widget.controller.refreshEmails,
+          onSignIn: widget.controller.signIn,
+          onSignOut: widget.controller.signOut,
+        );
+      },
+    );
+  }
+}
+
+class MailCheckerHomePage extends StatelessWidget {
+  const MailCheckerHomePage({
+    super.key,
+    required this.isSignedIn,
+    required this.isLoading,
+    required this.emails,
+    required this.onSignIn,
+    required this.onSignOut,
+    required this.onRefresh,
+    this.displayName,
+    this.errorMessage,
+  });
+
+  final String? displayName;
+  final List<MailMessageSummary> emails;
+  final String? errorMessage;
+  final bool isLoading;
+  final bool isSignedIn;
+  final Future<void> Function() onRefresh;
+  final Future<void> Function() onSignIn;
+  final Future<void> Function() onSignOut;
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: const Text('Mail Checker'),
+        actions: [
+          if (isSignedIn)
+            IconButton(
+              onPressed: isLoading ? null : () => unawaited(onSignOut()),
+              tooltip: 'Logout',
+              icon: const Icon(Icons.logout),
+            ),
+        ],
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
+      body: SafeArea(
         child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
           children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+            if (isLoading) const LinearProgressIndicator(),
+            Expanded(
+              child: isSignedIn
+                  ? _InboxView(
+                      displayName: displayName,
+                      emails: emails,
+                      errorMessage: errorMessage,
+                      isLoading: isLoading,
+                      onRefresh: onRefresh,
+                    )
+                  : _SignedOutView(
+                      errorMessage: errorMessage,
+                      isLoading: isLoading,
+                      onSignIn: onSignIn,
+                    ),
             ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+    );
+  }
+}
+
+class _SignedOutView extends StatelessWidget {
+  const _SignedOutView({
+    required this.errorMessage,
+    required this.isLoading,
+    required this.onSignIn,
+  });
+
+  final String? errorMessage;
+  final bool isLoading;
+  final Future<void> Function() onSignIn;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.mail_outline, size: 72),
+            const SizedBox(height: 16),
+            Text(
+              'Sign in with Google to load recent emails from your Gmail inbox.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            if (errorMessage != null) ...[
+              const SizedBox(height: 16),
+              Text(
+                errorMessage!,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: isLoading ? null : () => unawaited(onSignIn()),
+              icon: const Icon(Icons.login),
+              label: const Text('Sign in with Google'),
+            ),
+          ],
+        ),
       ),
     );
+  }
+}
+
+class _InboxView extends StatelessWidget {
+  const _InboxView({
+    required this.displayName,
+    required this.emails,
+    required this.errorMessage,
+    required this.isLoading,
+    required this.onRefresh,
+  });
+
+  final String? displayName;
+  final List<MailMessageSummary> emails;
+  final String? errorMessage;
+  final bool isLoading;
+  final Future<void> Function() onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  displayName == null
+                      ? 'Recent inbox messages'
+                      : 'Signed in as $displayName',
+                  style: Theme.of(context).textTheme.titleMedium,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                onPressed: isLoading ? null : () => unawaited(onRefresh()),
+                tooltip: 'Refresh emails',
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
+          ),
+        ),
+        if (errorMessage != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              errorMessage!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        Expanded(
+          child: emails.isEmpty
+              ? const Center(
+                  child: Text('No recent emails were found in your inbox.'),
+                )
+              : ListView.separated(
+                  itemCount: emails.length,
+                  separatorBuilder: (context, index) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final email = emails[index];
+                    return ListTile(
+                      leading: const CircleAvatar(child: Icon(Icons.mail)),
+                      title: Text(
+                        email.subject,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            email.sender,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            email.preview,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                      isThreeLine: true,
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class MailCheckerController extends ChangeNotifier {
+  MailCheckerController({
+    GoogleAuthProvider? authProvider,
+    GmailService? gmailService,
+  }) : _authProvider = authProvider ?? GoogleSignInAuthProvider(),
+       _gmailService = gmailService ?? const GmailService();
+
+  final GoogleAuthProvider _authProvider;
+  final GmailService _gmailService;
+
+  List<MailMessageSummary> _emails = const [];
+  String? _errorMessage;
+  bool _isLoading = false;
+  GoogleUserSession? _currentUser;
+
+  List<MailMessageSummary> get emails => List.unmodifiable(_emails);
+  String? get errorMessage => _errorMessage;
+  GoogleUserSession? get currentUser => _currentUser;
+  bool get isLoading => _isLoading;
+  bool get isSignedIn => _currentUser != null;
+
+  Future<void> initialize() async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final GoogleUserSession? account = await _authProvider.signInSilently();
+      if (account == null) {
+        _clearSession();
+      } else {
+        _currentUser = account;
+        _emails = const [];
+
+        try {
+          await _loadEmailsFor(account);
+        } catch (error, stackTrace) {
+          _logError(
+            'Loading Gmail messages after silent sign-in failed',
+            error,
+            stackTrace,
+          );
+          _errorMessage = _friendlyError();
+        }
+      }
+    } catch (error, stackTrace) {
+      _logError('Silent Google sign-in failed', error, stackTrace);
+      _clearSession();
+      _errorMessage = _friendlyError();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> signIn() async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final GoogleUserSession? account = await _authProvider.signIn();
+      if (account != null) {
+        _currentUser = account;
+        _emails = const [];
+        await _loadEmailsFor(account);
+      } else {
+        _clearSession();
+      }
+    } catch (error, stackTrace) {
+      _logError('Google sign-in failed', error, stackTrace);
+      _errorMessage = _friendlyError();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshEmails() async {
+    final GoogleUserSession? account = _currentUser;
+    if (account == null) {
+      return;
+    }
+
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await _loadEmailsFor(account);
+    } catch (error, stackTrace) {
+      _logError('Refreshing Gmail messages failed', error, stackTrace);
+      _errorMessage = _friendlyError();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> signOut() async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    String? errorMessage;
+
+    try {
+      await _authProvider.signOut();
+    } catch (error, stackTrace) {
+      _logError('Google sign-out failed', error, stackTrace);
+      errorMessage = _friendlyError();
+    } finally {
+      _clearSession();
+      _errorMessage = errorMessage;
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _loadEmailsFor(GoogleUserSession account) async {
+    _emails = await _gmailService.fetchRecentEmails(account);
+    _errorMessage = null;
+  }
+
+  void _clearSession() {
+    _currentUser = null;
+    _emails = const [];
+    _errorMessage = null;
+  }
+
+  static String _friendlyError() {
+    return 'Unable to access Gmail right now. Please confirm Google Sign-In is configured for this app and try again.';
+  }
+
+  static void _logError(String context, Object error, StackTrace stackTrace) {
+    debugPrint('$context: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
+}
+
+class GmailService {
+  const GmailService();
+
+  Future<List<MailMessageSummary>> fetchRecentEmails(
+    GoogleUserSession account,
+  ) async {
+    final _GoogleAuthClient client = _GoogleAuthClient(await account.authHeaders);
+
+    try {
+      final gmail.GmailApi gmailApi = gmail.GmailApi(client);
+      final gmail.ListMessagesResponse response = await gmailApi.users.messages
+          .list(
+            'me',
+            labelIds: <String>['INBOX'],
+            maxResults: 5,
+          );
+
+      final Iterable<String> messageIds = (response.messages ?? const <gmail.Message>[])
+          .map((gmail.Message reference) => reference.id)
+          .whereType<String>();
+      final List<gmail.Message> messages = await Future.wait(
+        messageIds.map(
+          (String id) => gmailApi.users.messages.get(
+            'me',
+            id,
+            format: 'metadata',
+            metadataHeaders: <String>['From', 'Subject'],
+          ),
+        ),
+      );
+
+      return messages.map(_toSummary).toList(growable: false);
+    } finally {
+      client.close();
+    }
+  }
+
+  static MailMessageSummary _toSummary(gmail.Message message) {
+    final String sender = _headerValue(message, 'From') ?? 'Unknown sender';
+    final String subject = _headerValue(message, 'Subject') ?? 'No subject';
+    final String preview = switch (message.snippet?.trim()) {
+      final String snippet when snippet.isNotEmpty => snippet,
+      _ => 'No preview available',
+    };
+
+    return MailMessageSummary(
+      sender: sender,
+      subject: subject,
+      preview: preview,
+    );
+  }
+
+  static String? _headerValue(gmail.Message message, String name) {
+    for (final gmail.MessagePartHeader header in message.payload?.headers ?? const []) {
+      if (header.name?.toLowerCase() == name.toLowerCase()) {
+        return header.value;
+      }
+    }
+    return null;
+  }
+}
+
+class MailMessageSummary {
+  const MailMessageSummary({
+    required this.sender,
+    required this.subject,
+    required this.preview,
+  });
+
+  final String sender;
+  final String subject;
+  final String preview;
+}
+
+class _GoogleAuthClient extends http.BaseClient {
+  _GoogleAuthClient(this._headers);
+
+  final Map<String, String> _headers;
+  final http.Client _client = http.Client();
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    request.headers.addAll(_headers);
+    return _client.send(request);
+  }
+
+  @override
+  void close() {
+    _client.close();
+  }
+}
+
+abstract class GoogleAuthProvider {
+  Future<GoogleUserSession?> signIn();
+  Future<GoogleUserSession?> signInSilently();
+  Future<void> signOut();
+}
+
+abstract class GoogleUserSession {
+  String? get displayName;
+  String get email;
+  Future<Map<String, String>> get authHeaders;
+}
+
+class GoogleSignInAuthProvider implements GoogleAuthProvider {
+  GoogleSignInAuthProvider({GoogleSignInGateway? gateway})
+    : _gateway = gateway ?? FlutterGoogleSignInGateway();
+
+  final GoogleSignInGateway _gateway;
+
+  @override
+  Future<GoogleUserSession?> signIn() async {
+    final GoogleSignInAccount? account = await _gateway.signIn();
+    if (account == null) {
+      return null;
+    }
+    return GoogleSignInSession(account);
+  }
+
+  @override
+  Future<GoogleUserSession?> signInSilently() async {
+    final GoogleSignInAccount? account = await _gateway.signInSilently();
+    if (account == null) {
+      return null;
+    }
+    return GoogleSignInSession(account);
+  }
+
+  @override
+  Future<void> signOut() async {
+    await _gateway.signOut();
+  }
+}
+
+class GoogleSignInSession implements GoogleUserSession {
+  GoogleSignInSession(this._account);
+
+  final GoogleSignInAccount _account;
+
+  @override
+  Future<Map<String, String>> get authHeaders => _account.authHeaders;
+
+  @override
+  String? get displayName => _account.displayName;
+
+  @override
+  String get email => _account.email;
+}
+
+abstract class GoogleSignInGateway {
+  Future<GoogleSignInAccount?> signIn();
+  Future<GoogleSignInAccount?> signInSilently();
+  Future<void> signOut();
+}
+
+class FlutterGoogleSignInGateway implements GoogleSignInGateway {
+  FlutterGoogleSignInGateway({
+    GoogleSignIn? googleSignIn,
+    List<String> scopes = defaultScopes,
+  }) : _googleSignIn = googleSignIn ?? GoogleSignIn(scopes: scopes),
+       scopes = List.unmodifiable(scopes);
+
+  static const List<String> defaultScopes = <String>[
+    gmail.GmailApi.gmailReadonlyScope,
+  ];
+
+  final GoogleSignIn _googleSignIn;
+
+  final List<String> scopes;
+
+  @override
+  Future<GoogleSignInAccount?> signIn() => _googleSignIn.signIn();
+
+  @override
+  Future<GoogleSignInAccount?> signInSilently() => _googleSignIn.signInSilently();
+
+  @override
+  Future<void> signOut() async {
+    await _googleSignIn.signOut();
   }
 }
