@@ -263,10 +263,8 @@ class MailCheckerController extends ChangeNotifier {
       _emails = const <InboxEmail>[];
       _statusMessage = 'Signed out. Sign in again to reload Gmail.';
     } catch (error) {
-      _account = null;
-      _emails = const <InboxEmail>[];
       _errorMessage = '$error';
-      _statusMessage = 'Signed out locally, but Google sign-out failed.';
+      _statusMessage = 'Google sign-out failed. Try again.';
     }
 
     _isBusy = false;
