@@ -456,6 +456,7 @@ class MailCheckerController extends ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
+    _isBusy = false;
     super.dispose();
   }
 
