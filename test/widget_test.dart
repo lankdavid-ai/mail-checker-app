@@ -130,6 +130,11 @@ void main() {
           subjectHeaderName: 'subject',
           subject: 'Subject',
           snippet: 'Preview',
+          extraHeaders: <gmail.MessagePartHeader>[
+            gmail.MessagePartHeader()
+              ..name = 'Subject'
+              ..value = 'Ignored duplicate subject',
+          ],
         ),
         'message-2': _gmailMessage(subject: 'Subject only'),
       },
@@ -346,6 +351,7 @@ gmail.Message _gmailMessage({
   String subjectHeaderName = 'Subject',
   String? subject,
   String? snippet,
+  List<gmail.MessagePartHeader> extraHeaders = const <gmail.MessagePartHeader>[],
 }) {
   final headers = <gmail.MessagePartHeader>[
     if (from != null)
@@ -356,6 +362,7 @@ gmail.Message _gmailMessage({
       gmail.MessagePartHeader()
         ..name = subjectHeaderName
         ..value = subject,
+    ...extraHeaders,
   ];
 
   return gmail.Message()

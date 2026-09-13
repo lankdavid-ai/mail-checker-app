@@ -313,8 +313,10 @@ class MailCheckerController extends ChangeNotifier {
       return;
     }
     if (_account == null) {
-      _errorMessage = null;
-      notifyListeners();
+      if (_errorMessage != null) {
+        _errorMessage = null;
+        notifyListeners();
+      }
       return;
     }
 
@@ -390,15 +392,25 @@ class MailCheckerController extends ChangeNotifier {
   }
 
   InboxEmail _toInboxEmail(gmail.Message message) {
-    final headers = <String, String>{
-      for (final header
-          in message.payload?.headers ?? const <gmail.MessagePartHeader>[])
-        if (header.name != null && header.value != null)
-          header.name!.toLowerCase(): header.value!,
-    };
+    String? from;
+    String? subject;
+    for (final header
+        in message.payload?.headers ?? const <gmail.MessagePartHeader>[]) {
+      final headerName = header.name?.toLowerCase();
+      final headerValue = header.value;
+      if (headerName == null || headerValue == null) {
+        continue;
+      }
+      if (headerName == 'from' && from == null) {
+        from = headerValue;
+      }
+      if (headerName == 'subject' && subject == null) {
+        subject = headerValue;
+      }
+    }
     return InboxEmail(
-      subject: headers['subject'] ?? '(No subject)',
-      from: headers['from'] ?? '(Unknown sender)',
+      subject: subject ?? '(No subject)',
+      from: from ?? '(Unknown sender)',
       snippet: message.snippet ?? '',
     );
   }
