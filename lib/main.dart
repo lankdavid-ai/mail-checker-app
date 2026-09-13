@@ -282,6 +282,7 @@ class MailCheckerController extends ChangeNotifier {
     _errorMessage = null;
     _notifyListeners();
     if (_isDisposed) {
+      _isBusy = false;
       return;
     }
 
@@ -335,6 +336,7 @@ class MailCheckerController extends ChangeNotifier {
     _statusMessage = 'Signing out…';
     _notifyListeners();
     if (_isDisposed) {
+      _isBusy = false;
       return;
     }
 
@@ -370,10 +372,15 @@ class MailCheckerController extends ChangeNotifier {
     _errorMessage = null;
     _statusMessage = 'Loading Gmail inbox…';
     _notifyListeners();
+    if (_isDisposed) {
+      _isBusy = false;
+      return;
+    }
 
     try {
       final emails = await (_loadInboxAction?.call(account) ?? _loadInbox(account));
       if (_isDisposed) {
+        _isBusy = false;
         return;
       }
       _emails = emails;
@@ -382,6 +389,7 @@ class MailCheckerController extends ChangeNotifier {
           : 'Loaded ${emails.length} Gmail preview messages.';
     } catch (error) {
       if (_isDisposed) {
+        _isBusy = false;
         return;
       }
       _emails = const <InboxEmail>[];
