@@ -339,6 +339,7 @@ class MailCheckerController extends ChangeNotifier {
       final hadCustomStatus = _statusMessage != _signedOutPrompt;
       _errorMessage = null;
       _emails = const <InboxEmail>[];
+      _signInClient = null;
       _statusMessage = _signedOutPrompt;
       if (hadError || hadEmails || hadCustomStatus) {
         _notifyListeners();
