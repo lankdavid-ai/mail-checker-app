@@ -278,7 +278,7 @@ class MailCheckerController extends ChangeNotifier {
     }
 
     _isBusy = true;
-    _statusMessage = 'Opening Google Sign-In…';
+    _statusMessage = 'Opening Google Sign-In...';
     _errorMessage = null;
     _notifyListeners();
     if (_isDisposed) {
@@ -333,7 +333,7 @@ class MailCheckerController extends ChangeNotifier {
 
     _isBusy = true;
     _errorMessage = null;
-    _statusMessage = 'Signing out…';
+    _statusMessage = 'Signing out...';
     _notifyListeners();
     if (_isDisposed) {
       _isBusy = false;
@@ -370,7 +370,7 @@ class MailCheckerController extends ChangeNotifier {
 
     _isBusy = true;
     _errorMessage = null;
-    _statusMessage = 'Loading Gmail inbox…';
+    _statusMessage = 'Loading Gmail inbox...';
     _notifyListeners();
     if (_isDisposed) {
       _isBusy = false;
