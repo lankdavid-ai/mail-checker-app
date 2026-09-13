@@ -247,6 +247,7 @@ class MailCheckerController extends ChangeNotifier {
   final String _serverClientId;
 
   MailCheckerSignInClient? _signInClient;
+  bool _isDisposed = false;
   bool _isBusy = false;
   String _statusMessage = _signedOutPrompt;
   String? _errorMessage;
@@ -328,13 +329,19 @@ class MailCheckerController extends ChangeNotifier {
     _isBusy = true;
     _errorMessage = null;
     _statusMessage = 'Signing out…';
-    notifyListeners();
+    _notifyListeners();
+    if (_isDisposed) {
+      return;
+    }
 
     Object? signOutError;
     try {
       await _client.signOut();
     } catch (error) {
       signOutError = error;
+    }
+    if (_isDisposed) {
+      return;
     }
 
     _account = null;
@@ -347,7 +354,7 @@ class MailCheckerController extends ChangeNotifier {
       _statusMessage = 'Signed out locally, but Google sign-out failed.';
     }
     _isBusy = false;
-    notifyListeners();
+    _notifyListeners();
   }
 
   Future<void> _refreshInbox(MailCheckerAccount account) async {
@@ -418,6 +425,18 @@ class MailCheckerController extends ChangeNotifier {
       from: from ?? '(Unknown sender)',
       snippet: message.snippet ?? '',
     );
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
+
+  void _notifyListeners() {
+    if (!_isDisposed) {
+      notifyListeners();
+    }
   }
 }
 

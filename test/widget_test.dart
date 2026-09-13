@@ -283,6 +283,25 @@ void main() {
     expect(controller.isSignedIn, isTrue);
     expect(controller.errorMessage, isNull);
   });
+
+  test('controller recreates the sign-in client after successful sign-out', () async {
+    var factoryCalls = 0;
+    final controller = MailCheckerController(
+      googleSignInFactory: () {
+        factoryCalls += 1;
+        return const _FakeSignInClient(account: _FakeMailCheckerAccount());
+      },
+      loadInboxAction: (_) async => const <InboxEmail>[],
+    );
+
+    await controller.signIn();
+    await controller.signOut();
+    await controller.signIn();
+
+    expect(factoryCalls, 2);
+    expect(controller.isSignedIn, isTrue);
+    expect(controller.errorMessage, isNull);
+  });
 }
 
 class _FakeMailCheckerAccount implements MailCheckerAccount {
