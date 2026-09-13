@@ -9,6 +9,8 @@ typedef SignInAction = Future<Object?> Function();
 typedef SignOutAction = Future<void> Function();
 typedef LoadInboxAction = Future<List<InboxEmail>> Function(Object account);
 
+const _messageBatchSize = 3;
+
 void main() {
   runApp(MyApp());
 }
@@ -163,19 +165,33 @@ class MailCheckerController extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
 
+    Object? account;
     try {
-      final account = await (_signInAction?.call() ?? _googleSignIn.signIn());
-      if (account == null) {
-        _account = null;
-        _emails = const <InboxEmail>[];
-        _statusMessage = 'Google Sign-In was cancelled.';
-        return;
-      }
+      account = await (_signInAction?.call() ?? _googleSignIn.signIn());
+    } catch (error) {
+      _account = null;
+      _emails = const <InboxEmail>[];
+      _errorMessage =
+          '$error\n\nVerify the package name, SHA-1 fingerprint, Gmail API, '
+          'and OAuth clients described in README.md.';
+      _statusMessage = 'Google Sign-In failed.';
+      _setBusy(false);
+      return;
+    }
 
-      _account = account;
-      _statusMessage = 'Loading Gmail inbox…';
-      notifyListeners();
+    if (account == null) {
+      _account = null;
+      _emails = const <InboxEmail>[];
+      _statusMessage = 'Google Sign-In was cancelled.';
+      _setBusy(false);
+      return;
+    }
 
+    _account = account;
+    _statusMessage = 'Loading Gmail inbox…';
+    notifyListeners();
+
+    try {
       _emails = await (_loadInboxAction?.call(account) ?? _loadInbox(account));
       _statusMessage = _emails.isEmpty
           ? 'Signed in successfully, but the inbox is empty.'
@@ -185,7 +201,7 @@ class MailCheckerController extends ChangeNotifier {
       _errorMessage =
           '$error\n\nVerify the package name, SHA-1 fingerprint, Gmail API, '
           'and OAuth clients described in README.md.';
-      _statusMessage = 'Google Sign-In or Gmail loading failed.';
+      _statusMessage = 'Signed in, but Gmail loading failed.';
     } finally {
       _setBusy(false);
     }
@@ -216,13 +232,14 @@ class MailCheckerController extends ChangeNotifier {
     try {
       final api = gmail.GmailApi(client);
       final response = await api.users.messages.list('me', maxResults: 10);
+      final messageIds = [
+        for (final message in response.messages ?? const <gmail.Message>[])
+          if (message.id != null) message.id!,
+      ];
       final emails = <InboxEmail>[];
-      for (final message in response.messages ?? const <gmail.Message>[]) {
-        final id = message.id;
-        if (id == null) {
-          continue;
-        }
-        emails.add(await _loadMessage(api, id));
+      for (var i = 0; i < messageIds.length; i += _messageBatchSize) {
+        final batch = messageIds.skip(i).take(_messageBatchSize).toList();
+        emails.addAll(await Future.wait(batch.map((id) => _loadMessage(api, id))));
       }
       return emails;
     } finally {

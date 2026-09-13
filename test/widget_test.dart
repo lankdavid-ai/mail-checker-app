@@ -52,7 +52,7 @@ void main() {
     expect(controller.statusMessage, 'Loaded 1 Gmail messages.');
   });
 
-  test('controller reports Gmail loading errors', () async {
+  test('controller reports Gmail loading errors after sign-in', () async {
     final controller = MailCheckerController(
       signInAction: () async => Object(),
       loadInboxAction: (_) async => throw Exception('boom'),
@@ -60,11 +60,12 @@ void main() {
 
     await controller.signIn();
 
+    expect(controller.isSignedIn, isTrue);
     expect(controller.isBusy, isFalse);
     expect(controller.emails, isEmpty);
     expect(
       controller.statusMessage,
-      'Google Sign-In or Gmail loading failed.',
+      'Signed in, but Gmail loading failed.',
     );
     expect(controller.errorMessage, contains('boom'));
   });
