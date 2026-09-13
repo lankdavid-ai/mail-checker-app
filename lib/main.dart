@@ -182,7 +182,7 @@ class GoogleMailCheckerSignInClient implements MailCheckerSignInClient {
 
   @override
   Future<void> signOut() {
-    return _googleSignIn.disconnect();
+    return _googleSignIn.signOut();
   }
 }
 
@@ -216,7 +216,7 @@ class MailCheckerController extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   List<InboxEmail> get emails => _emails;
   String get configurationSummary => _serverClientId.isEmpty
-      ? 'Optional: pass --dart-define=GOOGLE_SERVER_CLIENT_ID=<web-client-id> '
+      ? 'Pass --dart-define=GOOGLE_SERVER_CLIENT_ID=<web-client-id> '
           'after you create your OAuth web client.'
       : 'Using the Google server client ID provided through dart-define.';
 
@@ -325,11 +325,7 @@ class MailCheckerController extends ChangeNotifier {
         for (final message in response.messages ?? const <gmail.Message>[])
           if (message.id != null) message.id!,
       ];
-      final emails = <InboxEmail>[];
-      for (final id in messageIds) {
-        emails.add(await _loadMessage(api, id));
-      }
-      return emails;
+      return Future.wait(messageIds.map((id) => _loadMessage(api, id)));
     } finally {
       client.close();
     }

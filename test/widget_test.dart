@@ -13,7 +13,9 @@ void main() {
     );
     expect(find.text('Sign in with Google'), findsOneWidget);
     expect(
-      find.text('Complete the Google Cloud setup in README.md, then sign in.'),
+      find.text(
+        'Pass --dart-define=GOOGLE_SERVER_CLIENT_ID=<web-client-id> after you create your OAuth web client.',
+      ),
       findsOneWidget,
     );
   });
