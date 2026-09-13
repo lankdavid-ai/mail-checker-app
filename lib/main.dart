@@ -319,16 +319,21 @@ class MailCheckerController extends ChangeNotifier {
     _statusMessage = 'Signing out…';
     notifyListeners();
 
+    Object? signOutError;
     try {
       await _client.signOut();
-      _account = null;
-      _emails = const <InboxEmail>[];
-      _statusMessage = 'Signed out. Sign in again to reload Gmail.';
     } catch (error) {
-      _errorMessage = '$error';
-      _statusMessage = 'Google sign-out failed. Try again.';
+      signOutError = error;
     }
 
+    _account = null;
+    _emails = const <InboxEmail>[];
+    if (signOutError == null) {
+      _statusMessage = 'Signed out. Sign in again to reload Gmail.';
+    } else {
+      _errorMessage = '$signOutError';
+      _statusMessage = 'Signed out locally, but Google sign-out failed.';
+    }
     _isBusy = false;
     notifyListeners();
   }

@@ -227,12 +227,12 @@ void main() {
     await controller.signIn();
     await controller.signOut();
 
-    expect(controller.isSignedIn, isTrue);
+    expect(controller.isSignedIn, isFalse);
     expect(controller.isBusy, isFalse);
     expect(controller.emails, isEmpty);
     expect(
       controller.statusMessage,
-      'Google sign-out failed. Try again.',
+      'Signed out locally, but Google sign-out failed.',
     );
     expect(controller.errorMessage, contains('signout failed'));
   });
