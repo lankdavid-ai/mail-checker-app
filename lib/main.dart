@@ -282,6 +282,12 @@ class MailCheckerController extends ChangeNotifier {
     if (_account != null) {
       final operationToken = ++_operationToken;
       _isBusy = true;
+      _errorMessage = null;
+      _statusMessage = 'Loading Gmail inbox...';
+      _notifyListeners();
+      if (!_isCurrentOperation(operationToken)) {
+        return;
+      }
       await _refreshInbox(_account!, operationToken: operationToken);
       return;
     }

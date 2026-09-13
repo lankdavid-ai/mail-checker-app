@@ -94,7 +94,7 @@ Modern Google Sign-In on Android does not require the deprecated `GET_ACCOUNTS` 
 
 ## 5. Testing on the Android emulator
 
-1. Start the Android emulator.
+1. Start an Android emulator image that includes Google Play services, then sign the emulator into a Google account.
 2. Run the app:
 
 ```bash
