@@ -273,13 +273,17 @@ class MailCheckerController extends ChangeNotifier {
     }
 
     if (_account != null) {
-      return _refreshInbox(_account!);
+      await _refreshInbox(_account!);
+      return;
     }
 
     _isBusy = true;
     _statusMessage = 'Opening Google Sign-In…';
     _errorMessage = null;
-    notifyListeners();
+    _notifyListeners();
+    if (_isDisposed) {
+      return;
+    }
 
     MailCheckerAccount? account;
     try {
@@ -292,7 +296,7 @@ class MailCheckerController extends ChangeNotifier {
           'and OAuth clients described in README.md.';
       _statusMessage = 'Google Sign-In failed.';
       _isBusy = false;
-      notifyListeners();
+      _notifyListeners();
       return;
     }
 
@@ -301,7 +305,7 @@ class MailCheckerController extends ChangeNotifier {
       _emails = const <InboxEmail>[];
       _statusMessage = 'Google Sign-In was cancelled.';
       _isBusy = false;
-      notifyListeners();
+      _notifyListeners();
       return;
     }
 
@@ -321,7 +325,7 @@ class MailCheckerController extends ChangeNotifier {
       _emails = const <InboxEmail>[];
       _statusMessage = _signedOutPrompt;
       if (hadError || hadEmails || hadCustomStatus) {
-        notifyListeners();
+        _notifyListeners();
       }
       return;
     }
@@ -361,14 +365,24 @@ class MailCheckerController extends ChangeNotifier {
     _isBusy = true;
     _errorMessage = null;
     _statusMessage = 'Loading Gmail inbox…';
-    notifyListeners();
+    _notifyListeners();
+    if (_isDisposed) {
+      return;
+    }
 
     try {
-      _emails = await (_loadInboxAction?.call(account) ?? _loadInbox(account));
-      _statusMessage = _emails.isEmpty
+      final emails = await (_loadInboxAction?.call(account) ?? _loadInbox(account));
+      if (_isDisposed) {
+        return;
+      }
+      _emails = emails;
+      _statusMessage = emails.isEmpty
           ? 'Signed in successfully, but the inbox preview is empty.'
-          : 'Loaded ${_emails.length} Gmail preview messages.';
+          : 'Loaded ${emails.length} Gmail preview messages.';
     } catch (error) {
+      if (_isDisposed) {
+        return;
+      }
       _emails = const <InboxEmail>[];
       _errorMessage =
           '$error\n\nVerify the package name, SHA-1 fingerprint, Gmail API, '
@@ -377,7 +391,7 @@ class MailCheckerController extends ChangeNotifier {
     }
 
     _isBusy = false;
-    notifyListeners();
+    _notifyListeners();
   }
 
   Future<List<InboxEmail>> _loadInbox(MailCheckerAccount account) async {
