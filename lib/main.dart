@@ -261,8 +261,7 @@ class MailCheckerController extends ChangeNotifier {
   String get configurationSummary => _serverClientId.isEmpty
       ? 'Optional: pass --dart-define=GOOGLE_SERVER_CLIENT_ID=<web-client-id> '
           'only if your Google Sign-In setup requires a web OAuth client ID.'
-      : 'Using the optional Google server client ID provided through '
-          'dart-define.';
+      : 'Using a configured optional Google server client ID.';
 
   MailCheckerSignInClient get _client =>
       _signInClient ??= _googleSignInFactory();
