@@ -282,8 +282,7 @@ class MailCheckerController extends ChangeNotifier {
     _errorMessage = null;
     _notifyListeners();
     if (_isDisposed) {
-      _isBusy = false;
-      _statusMessage = _signedOutPrompt;
+      _resetControllerState();
       return;
     }
 
@@ -337,11 +336,7 @@ class MailCheckerController extends ChangeNotifier {
     _statusMessage = 'Signing out...';
     _notifyListeners();
     if (_isDisposed) {
-      _account = null;
-      _emails = const <InboxEmail>[];
-      _signInClient = null;
-      _isBusy = false;
-      _statusMessage = _signedOutPrompt;
+      _resetControllerState();
       return;
     }
 
@@ -378,15 +373,14 @@ class MailCheckerController extends ChangeNotifier {
     _statusMessage = 'Loading Gmail inbox...';
     _notifyListeners();
     if (_isDisposed) {
-      _isBusy = false;
-      _statusMessage = _account == null ? _signedOutPrompt : _statusMessage;
+      _resetControllerState();
       return;
     }
 
     try {
       final emails = await (_loadInboxAction?.call(account) ?? _loadInbox(account));
       if (_isDisposed) {
-        _isBusy = false;
+        _resetControllerState();
         return;
       }
       _emails = emails;
@@ -395,7 +389,7 @@ class MailCheckerController extends ChangeNotifier {
           : 'Loaded ${emails.length} Gmail preview messages.';
     } catch (error) {
       if (_isDisposed) {
-        _isBusy = false;
+        _resetControllerState();
         return;
       }
       _emails = const <InboxEmail>[];
@@ -462,12 +456,7 @@ class MailCheckerController extends ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
-    _account = null;
-    _emails = const <InboxEmail>[];
-    _errorMessage = null;
-    _signInClient = null;
-    _statusMessage = _signedOutPrompt;
-    _isBusy = false;
+    _resetControllerState();
     super.dispose();
   }
 
@@ -475,6 +464,15 @@ class MailCheckerController extends ChangeNotifier {
     if (!_isDisposed) {
       notifyListeners();
     }
+  }
+
+  void _resetControllerState() {
+    _account = null;
+    _emails = const <InboxEmail>[];
+    _errorMessage = null;
+    _signInClient = null;
+    _statusMessage = _signedOutPrompt;
+    _isBusy = false;
   }
 }
 
@@ -504,10 +502,11 @@ class InboxEmail {
 }
 
 class GoogleAuthClient extends http.BaseClient {
-  GoogleAuthClient(this._headers);
+  GoogleAuthClient(this._headers, {http.Client? inner})
+    : _inner = inner ?? http.Client();
 
   final Map<String, String> _headers;
-  final http.Client _inner = http.Client();
+  final http.Client _inner;
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) {

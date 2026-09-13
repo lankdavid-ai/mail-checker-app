@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:googleapis/gmail/v1.dart' as gmail;
+import 'package:http/http.dart' as http;
 
 import 'package:mail_checker_app/main.dart';
 
@@ -302,6 +303,28 @@ void main() {
     expect(controller.isSignedIn, isTrue);
     expect(controller.errorMessage, isNull);
   });
+
+  test('GoogleAuthClient preserves existing request headers while overriding auth headers', () async {
+    final innerClient = _RecordingHttpClient();
+    final client = GoogleAuthClient(
+      const <String, String>{
+        'Authorization': '******',
+        'x-goog-authuser': '0',
+        'Accept': 'text/plain',
+      },
+      inner: innerClient,
+    );
+    final request = http.Request('GET', Uri.parse('https://example.com'))
+      ..headers['Authorization'] = 'placeholder'
+      ..headers['Accept'] = 'application/json';
+
+    await client.send(request);
+
+    expect(innerClient.lastRequest, isNotNull);
+    expect(innerClient.lastRequest!.headers['Authorization'], '******');
+    expect(innerClient.lastRequest!.headers['x-goog-authuser'], '0');
+    expect(innerClient.lastRequest!.headers['Accept'], 'application/json');
+  });
 }
 
 class _FakeMailCheckerAccount implements MailCheckerAccount {
@@ -387,4 +410,18 @@ gmail.Message _gmailMessage({
   return gmail.Message()
     ..snippet = snippet
     ..payload = (gmail.MessagePart()..headers = headers);
+}
+
+class _RecordingHttpClient extends http.BaseClient {
+  http.BaseRequest? lastRequest;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    lastRequest = request;
+    return http.StreamedResponse(
+      const Stream<List<int>>.empty(),
+      200,
+      request: request,
+    );
+  }
 }
