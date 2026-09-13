@@ -313,8 +313,11 @@ class MailCheckerController extends ChangeNotifier {
       return;
     }
     if (_account == null) {
-      if (_errorMessage != null) {
-        _errorMessage = null;
+      final hadError = _errorMessage != null;
+      final hadEmails = _emails.isNotEmpty;
+      _errorMessage = null;
+      _emails = const <InboxEmail>[];
+      if (hadError || hadEmails) {
         notifyListeners();
       }
       return;
