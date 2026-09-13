@@ -462,6 +462,11 @@ class MailCheckerController extends ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
+    _account = null;
+    _emails = const <InboxEmail>[];
+    _errorMessage = null;
+    _signInClient = null;
+    _statusMessage = _signedOutPrompt;
     _isBusy = false;
     super.dispose();
   }
