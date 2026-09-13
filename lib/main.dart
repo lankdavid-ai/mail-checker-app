@@ -137,7 +137,13 @@ class MailCheckerHomePage extends StatelessWidget {
                   Card(
                     child: ListTile(
                       title: Text(email.subject),
-                      subtitle: Text('${email.from}\n${email.snippet}'),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(email.from),
+                          Text(email.snippet),
+                        ],
+                      ),
                       isThreeLine: true,
                     ),
                   ),
@@ -253,6 +259,7 @@ class MailCheckerController extends ChangeNotifier {
   String? _errorMessage;
   List<InboxEmail> _emails = const <InboxEmail>[];
   MailCheckerAccount? _account;
+  int _operationToken = 0;
 
   bool get isBusy => _isBusy;
   bool get isSignedIn => _account != null;
@@ -273,16 +280,17 @@ class MailCheckerController extends ChangeNotifier {
     }
 
     if (_account != null) {
-      await _refreshInbox(_account!);
+      final operationToken = ++_operationToken;
+      await _refreshInbox(_account!, operationToken: operationToken);
       return;
     }
 
+    final operationToken = ++_operationToken;
     _isBusy = true;
     _statusMessage = 'Opening Google Sign-In...';
     _errorMessage = null;
     _notifyListeners();
-    if (_isDisposed) {
-      _resetControllerState();
+    if (!_isCurrentOperation(operationToken)) {
       return;
     }
 
@@ -290,6 +298,9 @@ class MailCheckerController extends ChangeNotifier {
     try {
       account = await _client.signIn();
     } catch (error) {
+      if (!_isCurrentOperation(operationToken)) {
+        return;
+      }
       _account = null;
       _emails = const <InboxEmail>[];
       _errorMessage =
@@ -301,6 +312,9 @@ class MailCheckerController extends ChangeNotifier {
       return;
     }
 
+    if (!_isCurrentOperation(operationToken)) {
+      return;
+    }
     if (account == null) {
       _account = null;
       _emails = const <InboxEmail>[];
@@ -311,13 +325,14 @@ class MailCheckerController extends ChangeNotifier {
     }
 
     _account = account;
-    await _refreshInbox(account);
+    await _refreshInbox(account, operationToken: operationToken);
   }
 
   Future<void> signOut() async {
-    if (_isDisposed || _isBusy) {
+    if (_isDisposed) {
       return;
     }
+    final operationToken = ++_operationToken;
     if (_account == null) {
       final hadError = _errorMessage != null;
       final hadEmails = _emails.isNotEmpty;
@@ -335,8 +350,7 @@ class MailCheckerController extends ChangeNotifier {
     _errorMessage = null;
     _statusMessage = 'Signing out...';
     _notifyListeners();
-    if (_isDisposed) {
-      _resetControllerState();
+    if (!_isCurrentOperation(operationToken)) {
       return;
     }
 
@@ -346,7 +360,7 @@ class MailCheckerController extends ChangeNotifier {
     } catch (error) {
       signOutError = error;
     }
-    if (_isDisposed) {
+    if (!_isCurrentOperation(operationToken)) {
       return;
     }
 
@@ -363,7 +377,10 @@ class MailCheckerController extends ChangeNotifier {
     _notifyListeners();
   }
 
-  Future<void> _refreshInbox(MailCheckerAccount account) async {
+  Future<void> _refreshInbox(
+    MailCheckerAccount account, {
+    required int operationToken,
+  }) async {
     if (_isDisposed) {
       return;
     }
@@ -372,15 +389,13 @@ class MailCheckerController extends ChangeNotifier {
     _errorMessage = null;
     _statusMessage = 'Loading Gmail inbox...';
     _notifyListeners();
-    if (_isDisposed) {
-      _resetControllerState();
+    if (!_isCurrentOperation(operationToken)) {
       return;
     }
 
     try {
       final emails = await (_loadInboxAction?.call(account) ?? _loadInbox(account));
-      if (_isDisposed) {
-        _resetControllerState();
+      if (!_isCurrentOperation(operationToken)) {
         return;
       }
       _emails = emails;
@@ -388,8 +403,7 @@ class MailCheckerController extends ChangeNotifier {
           ? 'Signed in successfully, but the inbox preview is empty.'
           : 'Loaded ${emails.length} Gmail preview messages.';
     } catch (error) {
-      if (_isDisposed) {
-        _resetControllerState();
+      if (!_isCurrentOperation(operationToken)) {
         return;
       }
       _emails = const <InboxEmail>[];
@@ -464,6 +478,10 @@ class MailCheckerController extends ChangeNotifier {
     if (!_isDisposed) {
       notifyListeners();
     }
+  }
+
+  bool _isCurrentOperation(int operationToken) {
+    return !_isDisposed && operationToken == _operationToken;
   }
 
   void _resetControllerState() {

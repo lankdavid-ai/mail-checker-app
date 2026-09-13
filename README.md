@@ -98,11 +98,15 @@ Modern Google Sign-In on Android does not require the deprecated `GET_ACCOUNTS` 
 2. Run the app:
 
 ```bash
+flutter run
+```
+
+If your Android sign-in flow requires a Web OAuth client ID, use:
+
+```bash
 flutter run \
   --dart-define=GOOGLE_SERVER_CLIENT_ID=<your-web-client-id>
 ```
-
-If your Android sign-in flow works without a Web OAuth client ID, you can omit the `--dart-define` flag.
 
 3. Verify that the login screen appears.
 4. Tap **Sign in with Google**.
