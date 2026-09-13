@@ -6,7 +6,7 @@ Flutter app for Google Sign-In and Gmail inbox loading on Android.
 
 - `google_sign_in` and `googleapis` are wired into the Flutter app.
 - `android/app/build.gradle.kts` supports an optional local `android/key.properties` release signing file.
-- `android/app/src/main/AndroidManifest.xml` includes the network and account access permissions used by the Android Gmail flow.
+- `android/app/src/main/AndroidManifest.xml` includes the network permission required by the Android Gmail flow.
 - The app accepts an optional OAuth web client ID through `--dart-define=GOOGLE_SERVER_CLIENT_ID=...`.
 
 ## 1. Pull the latest code and install dependencies
@@ -87,6 +87,8 @@ keyPassword=replace-me
 ```
 
 This app uses Google OAuth clients directly. A `google-services.json` file is not required unless you add Firebase or other Google Services integrations separately.
+
+Modern Google Sign-In on Android does not require the deprecated `GET_ACCOUNTS` permission.
 
 ## 5. Testing on the Android emulator
 

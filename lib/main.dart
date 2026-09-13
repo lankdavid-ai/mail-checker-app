@@ -5,6 +5,10 @@ import 'package:http/http.dart' as http;
 
 const _serverClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
 
+typedef SignInAction = Future<Object?> Function();
+typedef SignOutAction = Future<void> Function();
+typedef LoadInboxAction = Future<List<InboxEmail>> Function(Object account);
+
 void main() {
   runApp(MyApp());
 }
@@ -116,22 +120,32 @@ class MailCheckerHomePage extends StatelessWidget {
 }
 
 class MailCheckerController extends ChangeNotifier {
-  MailCheckerController({GoogleSignIn? googleSignIn})
-      : _googleSignIn = googleSignIn ??
+  MailCheckerController({
+    GoogleSignIn? googleSignIn,
+    SignInAction? signInAction,
+    SignOutAction? signOutAction,
+    LoadInboxAction? loadInboxAction,
+  })  : _googleSignIn = googleSignIn ??
             GoogleSignIn(
               scopes: <String>[gmail.GmailApi.gmailReadonlyScope],
               serverClientId:
                   _serverClientId.isEmpty ? null : _serverClientId,
-            );
+            ),
+        _signInAction = signInAction,
+        _signOutAction = signOutAction,
+        _loadInboxAction = loadInboxAction;
 
   final GoogleSignIn _googleSignIn;
+  final SignInAction? _signInAction;
+  final SignOutAction? _signOutAction;
+  final LoadInboxAction? _loadInboxAction;
 
   bool _isBusy = false;
   String _statusMessage =
       'Complete the Google Cloud setup in README.md, then sign in.';
   String? _errorMessage;
   List<InboxEmail> _emails = const <InboxEmail>[];
-  GoogleSignInAccount? _account;
+  Object? _account;
 
   bool get isBusy => _isBusy;
   bool get isSignedIn => _account != null;
@@ -150,7 +164,7 @@ class MailCheckerController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final account = await _googleSignIn.signIn();
+      final account = await (_signInAction?.call() ?? _googleSignIn.signIn());
       if (account == null) {
         _account = null;
         _emails = const <InboxEmail>[];
@@ -162,23 +176,10 @@ class MailCheckerController extends ChangeNotifier {
       _statusMessage = 'Loading Gmail inbox…';
       notifyListeners();
 
-      final authHeaders = await account.authHeaders;
-      final client = GoogleAuthClient(authHeaders);
-      try {
-        final api = gmail.GmailApi(client);
-        final response = await api.users.messages.list('me', maxResults: 10);
-        final messageIds = response.messages ?? const <gmail.Message>[];
-        _emails = await Future.wait(
-          messageIds
-              .where((message) => message.id != null)
-              .map((message) => _loadMessage(api, message.id!)),
-        );
-        _statusMessage = _emails.isEmpty
-            ? 'Signed in successfully, but the inbox is empty.'
-            : 'Loaded ${_emails.length} Gmail messages.';
-      } finally {
-        client.close();
-      }
+      _emails = await (_loadInboxAction?.call(account) ?? _loadInbox(account));
+      _statusMessage = _emails.isEmpty
+          ? 'Signed in successfully, but the inbox is empty.'
+          : 'Loaded ${_emails.length} Gmail messages.';
     } catch (error) {
       _emails = const <InboxEmail>[];
       _errorMessage =
@@ -196,7 +197,7 @@ class MailCheckerController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _googleSignIn.signOut();
+      await (_signOutAction?.call() ?? _googleSignIn.signOut());
       _account = null;
       _emails = const <InboxEmail>[];
       _statusMessage = 'Signed out. Sign in again to reload Gmail.';
@@ -208,6 +209,27 @@ class MailCheckerController extends ChangeNotifier {
     }
   }
 
+  Future<List<InboxEmail>> _loadInbox(Object account) async {
+    final googleAccount = account as GoogleSignInAccount;
+    final authHeaders = await googleAccount.authHeaders;
+    final client = GoogleAuthClient(authHeaders);
+    try {
+      final api = gmail.GmailApi(client);
+      final response = await api.users.messages.list('me', maxResults: 10);
+      final emails = <InboxEmail>[];
+      for (final message in response.messages ?? const <gmail.Message>[]) {
+        final id = message.id;
+        if (id == null) {
+          continue;
+        }
+        emails.add(await _loadMessage(api, id));
+      }
+      return emails;
+    } finally {
+      client.close();
+    }
+  }
+
   Future<InboxEmail> _loadMessage(gmail.GmailApi api, String id) async {
     final message = await api.users.messages.get(
       'me',
@@ -215,8 +237,9 @@ class MailCheckerController extends ChangeNotifier {
       format: 'metadata',
       metadataHeaders: <String>['From', 'Subject'],
     );
-    final headers = {
-      for (final header in message.payload?.headers ?? const <gmail.MessagePartHeader>[])
+    final headers = <String, String>{
+      for (final header
+          in message.payload?.headers ?? const <gmail.MessagePartHeader>[])
         if (header.name != null && header.value != null)
           header.name!: header.value!,
     };
