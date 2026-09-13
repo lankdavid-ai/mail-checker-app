@@ -18,6 +18,30 @@ void main() {
     );
   });
 
+  testWidgets('shows signed-in actions and inbox preview', (
+    WidgetTester tester,
+  ) async {
+    final controller = MailCheckerController(
+      googleSignInFactory: () =>
+          const _FakeSignInClient(account: _FakeMailCheckerAccount()),
+      loadInboxAction: (_) async => const [
+        InboxEmail(
+          subject: 'Subject',
+          from: 'sender@example.com',
+          snippet: 'Preview',
+        ),
+      ],
+    );
+
+    await controller.signIn();
+    await tester.pumpWidget(MyApp(controller: controller));
+
+    expect(find.text('Refresh inbox'), findsOneWidget);
+    expect(find.text('Sign out'), findsOneWidget);
+    expect(find.text('Inbox Preview'), findsOneWidget);
+    expect(find.text('Subject'), findsOneWidget);
+  });
+
   test('controller reports cancelled sign-in', () async {
     final controller = MailCheckerController(
       googleSignInFactory: () => const _FakeSignInClient(),

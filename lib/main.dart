@@ -3,7 +3,9 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/gmail/v1.dart' as gmail;
 import 'package:http/http.dart' as http;
 
-const _serverClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
+const _defaultServerClientId = String.fromEnvironment(
+  'GOOGLE_SERVER_CLIENT_ID',
+);
 const _inboxPreviewLimit = 3;
 
 typedef LoadInboxAction = Future<List<InboxEmail>> Function(
@@ -161,10 +163,10 @@ class GoogleMailCheckerAccount implements MailCheckerAccount {
 }
 
 class GoogleMailCheckerSignInClient implements MailCheckerSignInClient {
-  GoogleMailCheckerSignInClient()
+  GoogleMailCheckerSignInClient({required String serverClientId})
       : _googleSignIn = GoogleSignIn(
           scopes: <String>[gmail.GmailApi.gmailReadonlyScope],
-          serverClientId: _serverClientId.isEmpty ? null : _serverClientId,
+          serverClientId: serverClientId.isEmpty ? null : serverClientId,
         );
 
   final GoogleSignIn _googleSignIn;
@@ -188,12 +190,17 @@ class MailCheckerController extends ChangeNotifier {
   MailCheckerController({
     LoadInboxAction? loadInboxAction,
     GoogleSignInFactory? googleSignInFactory,
+    String serverClientId = _defaultServerClientId,
   })  : _loadInboxAction = loadInboxAction,
-        _googleSignInFactory =
-            googleSignInFactory ?? _defaultGoogleSignInFactory;
+        _serverClientId = serverClientId,
+        _googleSignInFactory = googleSignInFactory ??
+            (() => GoogleMailCheckerSignInClient(
+                  serverClientId: serverClientId,
+                ));
 
   final LoadInboxAction? _loadInboxAction;
   final GoogleSignInFactory _googleSignInFactory;
+  final String _serverClientId;
 
   MailCheckerSignInClient? _signInClient;
   bool _isBusy = false;
@@ -219,6 +226,10 @@ class MailCheckerController extends ChangeNotifier {
   Future<void> signIn() async {
     if (_isBusy) {
       return;
+    }
+
+    if (_account != null) {
+      return _refreshInbox(_account!);
     }
 
     _isBusy = true;
@@ -251,24 +262,7 @@ class MailCheckerController extends ChangeNotifier {
     }
 
     _account = account;
-    _statusMessage = 'Loading Gmail inbox…';
-    notifyListeners();
-
-    try {
-      _emails = await (_loadInboxAction?.call(account) ?? _loadInbox(account));
-      _statusMessage = _emails.isEmpty
-          ? 'Signed in successfully, but the inbox preview is empty.'
-          : 'Loaded ${_emails.length} Gmail preview messages.';
-    } catch (error) {
-      _emails = const <InboxEmail>[];
-      _errorMessage =
-          '$error\n\nVerify the package name, SHA-1 fingerprint, Gmail API, '
-          'and OAuth clients described in README.md.';
-      _statusMessage = 'Signed in, but Gmail loading failed.';
-    }
-
-    _isBusy = false;
-    notifyListeners();
+    await _refreshInbox(account);
   }
 
   Future<void> signOut() async {
@@ -289,6 +283,29 @@ class MailCheckerController extends ChangeNotifier {
     } catch (error) {
       _errorMessage = '$error';
       _statusMessage = 'Google sign-out failed. Try again.';
+    }
+
+    _isBusy = false;
+    notifyListeners();
+  }
+
+  Future<void> _refreshInbox(MailCheckerAccount account) async {
+    _isBusy = true;
+    _errorMessage = null;
+    _statusMessage = 'Loading Gmail inbox…';
+    notifyListeners();
+
+    try {
+      _emails = await (_loadInboxAction?.call(account) ?? _loadInbox(account));
+      _statusMessage = _emails.isEmpty
+          ? 'Signed in successfully, but the inbox preview is empty.'
+          : 'Loaded ${_emails.length} Gmail preview messages.';
+    } catch (error) {
+      _emails = const <InboxEmail>[];
+      _errorMessage =
+          '$error\n\nVerify the package name, SHA-1 fingerprint, Gmail API, '
+          'and OAuth clients described in README.md.';
+      _statusMessage = 'Signed in, but Gmail loading failed.';
     }
 
     _isBusy = false;
@@ -332,10 +349,6 @@ class MailCheckerController extends ChangeNotifier {
       from: headers['From'] ?? '(Unknown sender)',
       snippet: message.snippet ?? '',
     );
-  }
-
-  static MailCheckerSignInClient _defaultGoogleSignInFactory() {
-    return GoogleMailCheckerSignInClient();
   }
 }
 
