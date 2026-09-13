@@ -298,7 +298,9 @@ class MailCheckerController extends ChangeNotifier {
     try {
       final GoogleUserSession? account = await _authProvider.signInSilently();
       if (account != null) {
-        await _refreshStateFor(account);
+        _currentUser = account;
+        _emails = const [];
+        await _loadEmailsFor(account);
       } else {
         _clearSession();
       }
@@ -320,7 +322,9 @@ class MailCheckerController extends ChangeNotifier {
     try {
       final GoogleUserSession? account = await _authProvider.signIn();
       if (account != null) {
-        await _refreshStateFor(account);
+        _currentUser = account;
+        _emails = const [];
+        await _loadEmailsFor(account);
       } else {
         _clearSession();
       }
@@ -344,7 +348,7 @@ class MailCheckerController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _refreshStateFor(account);
+      await _loadEmailsFor(account);
     } catch (error, stackTrace) {
       _logError('Refreshing Gmail messages failed', error, stackTrace);
       _errorMessage = _friendlyError();
@@ -371,12 +375,8 @@ class MailCheckerController extends ChangeNotifier {
     }
   }
 
-  Future<void> _refreshStateFor(GoogleUserSession account) async {
-    final List<MailMessageSummary> emails = await _gmailService.fetchRecentEmails(
-      account,
-    );
-    _currentUser = account;
-    _emails = emails;
+  Future<void> _loadEmailsFor(GoogleUserSession account) async {
+    _emails = await _gmailService.fetchRecentEmails(account);
     _errorMessage = null;
   }
 
@@ -545,7 +545,6 @@ class GoogleSignInSession implements GoogleUserSession {
 }
 
 abstract class GoogleSignInGateway {
-  List<String> get scopes;
   Future<GoogleSignInAccount?> signIn();
   Future<GoogleSignInAccount?> signInSilently();
   Future<void> signOut();
@@ -564,7 +563,6 @@ class FlutterGoogleSignInGateway implements GoogleSignInGateway {
 
   final GoogleSignIn _googleSignIn;
 
-  @override
   final List<String> scopes;
 
   @override

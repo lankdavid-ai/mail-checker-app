@@ -263,13 +263,76 @@ void main() {
       gateway: gateway,
     );
 
-    expect(gateway.scopes, contains(gmail.GmailApi.gmailReadonlyScope));
+    expect(
+      FlutterGoogleSignInGateway.defaultScopes,
+      contains(gmail.GmailApi.gmailReadonlyScope),
+    );
     expect(await provider.signIn(), isNull);
     expect(await provider.signInSilently(), isNull);
 
     await provider.signOut();
 
     expect(gateway.signOutCalls, 1);
+  });
+
+  test('controller keeps authenticated user and shows error when sign-in fetch fails', () async {
+    final FakeGoogleUserSession user = FakeGoogleUserSession(
+      email: 'alice@example.com',
+      displayName: 'Alice',
+    );
+    final FakeGmailService gmailService = FakeGmailService(
+      emails: const <MailMessageSummary>[],
+      throwOnFetch: true,
+    );
+    final MailCheckerController controller = MailCheckerController(
+      authProvider: FakeGoogleAuthProvider(signInUser: user),
+      gmailService: gmailService,
+    );
+
+    await controller.signIn();
+
+    expect(controller.isSignedIn, isTrue);
+    expect(controller.currentUser?.email, 'alice@example.com');
+    expect(controller.emails, isEmpty);
+    expect(
+      controller.errorMessage,
+      'Unable to access Gmail right now. Please confirm Google Sign-In is configured for this app and try again.',
+    );
+  });
+
+  test('controller keeps existing emails and shows error when refresh fails', () async {
+    final FakeGoogleAuthProvider authProvider = FakeGoogleAuthProvider(
+      signInUser: FakeGoogleUserSession(
+        email: 'alice@example.com',
+        displayName: 'Alice',
+      ),
+    );
+    final FakeGmailService gmailService = FakeGmailService(
+      emails: const <MailMessageSummary>[
+        MailMessageSummary(
+          sender: 'team@example.com',
+          subject: 'Hello',
+          preview: 'Welcome to Gmail.',
+        ),
+      ],
+    );
+    final MailCheckerController controller = MailCheckerController(
+      authProvider: authProvider,
+      gmailService: gmailService,
+    );
+
+    await controller.signIn();
+    gmailService.throwOnFetch = true;
+
+    await controller.refreshEmails();
+
+    expect(controller.isSignedIn, isTrue);
+    expect(controller.currentUser?.email, 'alice@example.com');
+    expect(controller.emails, hasLength(1));
+    expect(
+      controller.errorMessage,
+      'Unable to access Gmail right now. Please confirm Google Sign-In is configured for this app and try again.',
+    );
   });
 }
 
@@ -327,22 +390,23 @@ class FakeGoogleUserSession implements GoogleUserSession {
 }
 
 class FakeGmailService extends GmailService {
-  FakeGmailService({required this.emails});
+  FakeGmailService({required this.emails, this.throwOnFetch = false});
 
   final List<MailMessageSummary> emails;
+  bool throwOnFetch;
 
   @override
   Future<List<MailMessageSummary>> fetchRecentEmails(
     GoogleUserSession account,
   ) async {
+    if (throwOnFetch) {
+      throw Exception('fetch failed');
+    }
     return emails;
   }
 }
 
 class FakeGoogleSignInGateway implements GoogleSignInGateway {
-  @override
-  final List<String> scopes = FlutterGoogleSignInGateway.defaultScopes;
-
   int signOutCalls = 0;
 
   @override
