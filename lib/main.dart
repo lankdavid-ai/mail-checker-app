@@ -11,6 +11,7 @@ typedef SignOutAction = Future<void> Function();
 typedef LoadInboxAction = Future<List<InboxEmail>> Function(
   MailCheckerAccount account,
 );
+typedef GoogleSignInFactory = GoogleSignIn Function();
 
 void main() {
   runApp(const MyApp());
@@ -108,10 +109,13 @@ class MailCheckerHomePage extends StatelessWidget {
               Text(controller.statusMessage),
               if (controller.errorMessage case final error?) ...[
                 const SizedBox(height: 12),
-                Text(
-                  error,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
+                Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    error,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                   ),
                 ),
               ],
@@ -157,20 +161,18 @@ class MailCheckerController extends ChangeNotifier {
     SignInAction? signInAction,
     SignOutAction? signOutAction,
     LoadInboxAction? loadInboxAction,
-  })  : _googleSignIn = GoogleSignIn(
-            scopes: <String>[gmail.GmailApi.gmailReadonlyScope],
-            serverClientId:
-                _serverClientId.isEmpty ? null : _serverClientId,
-          ),
-        _signInAction = signInAction,
+    GoogleSignInFactory? googleSignInFactory,
+  })  : _signInAction = signInAction,
         _signOutAction = signOutAction,
-        _loadInboxAction = loadInboxAction;
+        _loadInboxAction = loadInboxAction,
+        _googleSignInFactory = googleSignInFactory ?? _defaultGoogleSignIn;
 
-  final GoogleSignIn _googleSignIn;
   final SignInAction? _signInAction;
   final SignOutAction? _signOutAction;
   final LoadInboxAction? _loadInboxAction;
+  final GoogleSignInFactory _googleSignInFactory;
 
+  GoogleSignIn? _googleSignIn;
   bool _isBusy = false;
   String _statusMessage =
       'Complete the Google Cloud setup in README.md, then sign in.';
@@ -187,6 +189,8 @@ class MailCheckerController extends ChangeNotifier {
       ? 'Optional: pass --dart-define=GOOGLE_SERVER_CLIENT_ID=<web-client-id> '
           'after you create your OAuth web client.'
       : 'Using the Google server client ID provided through dart-define.';
+
+  GoogleSignIn get _client => _googleSignIn ??= _googleSignInFactory();
 
   Future<void> signIn() async {
     if (_isBusy) {
@@ -254,13 +258,15 @@ class MailCheckerController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await (_signOutAction?.call() ?? _googleSignIn.signOut());
+      await (_signOutAction?.call() ?? _client.signOut());
       _account = null;
       _emails = const <InboxEmail>[];
       _statusMessage = 'Signed out. Sign in again to reload Gmail.';
     } catch (error) {
+      _account = null;
+      _emails = const <InboxEmail>[];
       _errorMessage = '$error';
-      _statusMessage = 'Google sign-out failed.';
+      _statusMessage = 'Signed out locally, but Google sign-out failed.';
     }
 
     _isBusy = false;
@@ -268,7 +274,7 @@ class MailCheckerController extends ChangeNotifier {
   }
 
   Future<MailCheckerAccount?> _defaultSignIn() async {
-    final account = await _googleSignIn.signIn();
+    final account = await _client.signIn();
     if (account == null) {
       return null;
     }
@@ -315,6 +321,13 @@ class MailCheckerController extends ChangeNotifier {
       subject: headers['Subject'] ?? '(No subject)',
       from: headers['From'] ?? '(Unknown sender)',
       snippet: message.snippet ?? '',
+    );
+  }
+
+  static GoogleSignIn _defaultGoogleSignIn() {
+    return GoogleSignIn(
+      scopes: <String>[gmail.GmailApi.gmailReadonlyScope],
+      serverClientId: _serverClientId.isEmpty ? null : _serverClientId,
     );
   }
 }

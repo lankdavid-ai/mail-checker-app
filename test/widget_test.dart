@@ -69,7 +69,6 @@ void main() {
     expect(controller.statusMessage, 'Loaded 1 Gmail messages.');
   });
 
-
   test('InboxEmail compares by value', () {
     const first = InboxEmail(
       subject: 'Subject',
@@ -102,6 +101,42 @@ void main() {
       'Signed in, but Gmail loading failed.',
     );
     expect(controller.errorMessage, contains('boom'));
+  });
+
+  test('controller signs out successfully', () async {
+    final controller = MailCheckerController(
+      signInAction: () async => const _FakeMailCheckerAccount(),
+      loadInboxAction: (_) async => const <InboxEmail>[],
+      signOutAction: () async {},
+    );
+
+    await controller.signIn();
+    await controller.signOut();
+
+    expect(controller.isSignedIn, isFalse);
+    expect(controller.isBusy, isFalse);
+    expect(controller.emails, isEmpty);
+    expect(controller.statusMessage, 'Signed out. Sign in again to reload Gmail.');
+  });
+
+  test('controller reports Google sign-out failures', () async {
+    final controller = MailCheckerController(
+      signInAction: () async => const _FakeMailCheckerAccount(),
+      loadInboxAction: (_) async => const <InboxEmail>[],
+      signOutAction: () async => throw Exception('signout failed'),
+    );
+
+    await controller.signIn();
+    await controller.signOut();
+
+    expect(controller.isSignedIn, isFalse);
+    expect(controller.isBusy, isFalse);
+    expect(controller.emails, isEmpty);
+    expect(
+      controller.statusMessage,
+      'Signed out locally, but Google sign-out failed.',
+    );
+    expect(controller.errorMessage, contains('signout failed'));
   });
 }
 
