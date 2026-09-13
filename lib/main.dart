@@ -12,6 +12,7 @@ const _defaultServerClientId = String.fromEnvironment(
 // per-message metadata concurrently keeps the code simple without meaningful
 // Gmail API overhead.
 const _inboxPreviewLimit = 3;
+const _signedOutPrompt = 'Complete the Google Cloud setup in README.md, then sign in.';
 
 typedef LoadInboxAction = Future<List<InboxEmail>> Function(
   MailCheckerAccount account,
@@ -247,8 +248,7 @@ class MailCheckerController extends ChangeNotifier {
 
   MailCheckerSignInClient? _signInClient;
   bool _isBusy = false;
-  String _statusMessage =
-      'Complete the Google Cloud setup in README.md, then sign in.';
+  String _statusMessage = _signedOutPrompt;
   String? _errorMessage;
   List<InboxEmail> _emails = const <InboxEmail>[];
   MailCheckerAccount? _account;
@@ -315,9 +315,11 @@ class MailCheckerController extends ChangeNotifier {
     if (_account == null) {
       final hadError = _errorMessage != null;
       final hadEmails = _emails.isNotEmpty;
+      final hadCustomStatus = _statusMessage != _signedOutPrompt;
       _errorMessage = null;
       _emails = const <InboxEmail>[];
-      if (hadError || hadEmails) {
+      _statusMessage = _signedOutPrompt;
+      if (hadError || hadEmails || hadCustomStatus) {
         notifyListeners();
       }
       return;
@@ -452,7 +454,9 @@ class GoogleAuthClient extends http.BaseClient {
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) {
-    request.headers.addAll(_headers);
+    for (final entry in _headers.entries) {
+      request.headers.putIfAbsent(entry.key, () => entry.value);
+    }
     return _inner.send(request);
   }
 

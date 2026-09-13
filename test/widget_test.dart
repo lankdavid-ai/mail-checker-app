@@ -234,7 +234,7 @@ void main() {
     expect(controller.isBusy, isFalse);
     expect(
       controller.statusMessage,
-      'Google Sign-In failed.',
+      'Complete the Google Cloud setup in README.md, then sign in.',
     );
     expect(controller.errorMessage, isNull);
   });
