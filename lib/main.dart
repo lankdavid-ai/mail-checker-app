@@ -375,7 +375,7 @@ class MailCheckerController extends ChangeNotifier {
   }
 
   static String _friendlyError(Object error) {
-    return 'Unable to access Gmail right now. Please confirm Google Sign-In is configured for this Android app and try again.\n$error';
+    return 'Unable to access Gmail right now. Please confirm Google Sign-In is configured for this app and try again.\n$error';
   }
 }
 
@@ -396,22 +396,19 @@ class GmailService {
             maxResults: 10,
           );
 
-      final List<gmail.Message> messages = <gmail.Message>[];
-      for (final gmail.Message reference in response.messages ?? const []) {
-        final String? id = reference.id;
-        if (id == null) {
-          continue;
-        }
-
-        messages.add(
-          await gmailApi.users.messages.get(
+      final Iterable<String> messageIds = (response.messages ?? const <gmail.Message>[])
+          .map((gmail.Message reference) => reference.id)
+          .whereType<String>();
+      final List<gmail.Message> messages = await Future.wait(
+        messageIds.map(
+          (String id) => gmailApi.users.messages.get(
             'me',
             id,
             format: 'metadata',
             metadataHeaders: <String>['From', 'Subject'],
           ),
-        );
-      }
+        ),
+      );
 
       return messages.map(_toSummary).toList(growable: false);
     } finally {

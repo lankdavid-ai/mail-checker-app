@@ -67,6 +67,45 @@ void main() {
     );
     expect(find.byTooltip('Logout'), findsOneWidget);
   });
+
+  testWidgets('shows signed-in empty inbox state', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const TestApp(
+        child: MailCheckerHomePage(
+          isSignedIn: true,
+          isLoading: false,
+          displayName: 'Flutter Tester',
+          emails: <MailMessageSummary>[],
+          onRefresh: _noop,
+          onSignIn: _noop,
+          onSignOut: _noop,
+        ),
+      ),
+    );
+
+    expect(find.text('Signed in as Flutter Tester'), findsOneWidget);
+    expect(find.text('No recent emails were found in your inbox.'), findsOneWidget);
+  });
+
+  testWidgets('shows signed-in Gmail access error', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const TestApp(
+        child: MailCheckerHomePage(
+          isSignedIn: true,
+          isLoading: false,
+          displayName: 'Flutter Tester',
+          emails: <MailMessageSummary>[],
+          errorMessage: 'Unable to access Gmail right now.',
+          onRefresh: _noop,
+          onSignIn: _noop,
+          onSignOut: _noop,
+        ),
+      ),
+    );
+
+    expect(find.text('Unable to access Gmail right now.'), findsOneWidget);
+    expect(find.byTooltip('Refresh emails'), findsOneWidget);
+  });
 }
 
 class TestApp extends StatelessWidget {
