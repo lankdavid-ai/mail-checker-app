@@ -4,14 +4,12 @@ import 'package:googleapis/gmail/v1.dart' as gmail;
 import 'package:http/http.dart' as http;
 
 const _serverClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
-const _messageBatchSize = 3;
+const _inboxPreviewLimit = 3;
 
-typedef SignInAction = Future<MailCheckerAccount?> Function();
-typedef SignOutAction = Future<void> Function();
 typedef LoadInboxAction = Future<List<InboxEmail>> Function(
   MailCheckerAccount account,
 );
-typedef GoogleSignInFactory = GoogleSignIn Function();
+typedef GoogleSignInFactory = MailCheckerSignInClient Function();
 
 void main() {
   runApp(const MyApp());
@@ -122,7 +120,7 @@ class MailCheckerHomePage extends StatelessWidget {
               if (controller.emails.isNotEmpty) ...[
                 const SizedBox(height: 24),
                 Text(
-                  'Inbox',
+                  'Inbox Preview',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 12),
@@ -147,6 +145,12 @@ abstract interface class MailCheckerAccount {
   Future<Map<String, String>> get authHeaders;
 }
 
+abstract interface class MailCheckerSignInClient {
+  Future<MailCheckerAccount?> signIn();
+
+  Future<void> signOut();
+}
+
 class GoogleMailCheckerAccount implements MailCheckerAccount {
   GoogleMailCheckerAccount(this._account);
 
@@ -156,23 +160,42 @@ class GoogleMailCheckerAccount implements MailCheckerAccount {
   Future<Map<String, String>> get authHeaders => _account.authHeaders;
 }
 
+class GoogleMailCheckerSignInClient implements MailCheckerSignInClient {
+  GoogleMailCheckerSignInClient()
+      : _googleSignIn = GoogleSignIn(
+          scopes: <String>[gmail.GmailApi.gmailReadonlyScope],
+          serverClientId: _serverClientId.isEmpty ? null : _serverClientId,
+        );
+
+  final GoogleSignIn _googleSignIn;
+
+  @override
+  Future<MailCheckerAccount?> signIn() async {
+    final account = await _googleSignIn.signIn();
+    if (account == null) {
+      return null;
+    }
+    return GoogleMailCheckerAccount(account);
+  }
+
+  @override
+  Future<void> signOut() {
+    return _googleSignIn.signOut();
+  }
+}
+
 class MailCheckerController extends ChangeNotifier {
   MailCheckerController({
-    SignInAction? signInAction,
-    SignOutAction? signOutAction,
     LoadInboxAction? loadInboxAction,
     GoogleSignInFactory? googleSignInFactory,
-  })  : _signInAction = signInAction,
-        _signOutAction = signOutAction,
-        _loadInboxAction = loadInboxAction,
-        _googleSignInFactory = googleSignInFactory ?? _defaultGoogleSignIn;
+  })  : _loadInboxAction = loadInboxAction,
+        _googleSignInFactory =
+            googleSignInFactory ?? _defaultGoogleSignInFactory;
 
-  final SignInAction? _signInAction;
-  final SignOutAction? _signOutAction;
   final LoadInboxAction? _loadInboxAction;
   final GoogleSignInFactory _googleSignInFactory;
 
-  GoogleSignIn? _googleSignIn;
+  MailCheckerSignInClient? _signInClient;
   bool _isBusy = false;
   String _statusMessage =
       'Complete the Google Cloud setup in README.md, then sign in.';
@@ -190,7 +213,8 @@ class MailCheckerController extends ChangeNotifier {
           'after you create your OAuth web client.'
       : 'Using the Google server client ID provided through dart-define.';
 
-  GoogleSignIn get _client => _googleSignIn ??= _googleSignInFactory();
+  MailCheckerSignInClient get _client =>
+      _signInClient ??= _googleSignInFactory();
 
   Future<void> signIn() async {
     if (_isBusy) {
@@ -204,7 +228,7 @@ class MailCheckerController extends ChangeNotifier {
 
     MailCheckerAccount? account;
     try {
-      account = await (_signInAction?.call() ?? _defaultSignIn());
+      account = await _client.signIn();
     } catch (error) {
       _account = null;
       _emails = const <InboxEmail>[];
@@ -233,8 +257,8 @@ class MailCheckerController extends ChangeNotifier {
     try {
       _emails = await (_loadInboxAction?.call(account) ?? _loadInbox(account));
       _statusMessage = _emails.isEmpty
-          ? 'Signed in successfully, but the inbox is empty.'
-          : 'Loaded ${_emails.length} Gmail messages.';
+          ? 'Signed in successfully, but the inbox preview is empty.'
+          : 'Loaded ${_emails.length} Gmail preview messages.';
     } catch (error) {
       _emails = const <InboxEmail>[];
       _errorMessage =
@@ -258,7 +282,7 @@ class MailCheckerController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await (_signOutAction?.call() ?? _client.signOut());
+      await _client.signOut();
       _account = null;
       _emails = const <InboxEmail>[];
       _statusMessage = 'Signed out. Sign in again to reload Gmail.';
@@ -271,14 +295,6 @@ class MailCheckerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<MailCheckerAccount?> _defaultSignIn() async {
-    final account = await _client.signIn();
-    if (account == null) {
-      return null;
-    }
-    return GoogleMailCheckerAccount(account);
-  }
-
   Future<List<InboxEmail>> _loadInbox(MailCheckerAccount account) async {
     final authHeaders = await account.authHeaders;
     final client = GoogleAuthClient(authHeaders);
@@ -286,20 +302,13 @@ class MailCheckerController extends ChangeNotifier {
       final api = gmail.GmailApi(client);
       final response = await api.users.messages.list(
         'me',
-        maxResults: _messageBatchSize,
+        maxResults: _inboxPreviewLimit,
       );
       final messageIds = [
         for (final message in response.messages ?? const <gmail.Message>[])
           if (message.id != null) message.id!,
       ];
-      final emails = <InboxEmail>[];
-      for (var i = 0; i < messageIds.length; i += _messageBatchSize) {
-        final batch = messageIds.skip(i).take(_messageBatchSize).toList();
-        emails.addAll(
-          await Future.wait(batch.map((id) => _loadMessage(api, id))),
-        );
-      }
-      return emails;
+      return Future.wait(messageIds.map((id) => _loadMessage(api, id)));
     } finally {
       client.close();
     }
@@ -325,11 +334,8 @@ class MailCheckerController extends ChangeNotifier {
     );
   }
 
-  static GoogleSignIn _defaultGoogleSignIn() {
-    return GoogleSignIn(
-      scopes: <String>[gmail.GmailApi.gmailReadonlyScope],
-      serverClientId: _serverClientId.isEmpty ? null : _serverClientId,
-    );
+  static MailCheckerSignInClient _defaultGoogleSignInFactory() {
+    return GoogleMailCheckerSignInClient();
   }
 }
 
