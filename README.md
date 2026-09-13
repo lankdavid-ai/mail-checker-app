@@ -12,7 +12,7 @@ Flutter app for Google Sign-In and Gmail inbox loading on Android.
 ## 1. Pull the latest code and install dependencies
 
 ```bash
-git pull origin main
+git pull origin "$(git branch --show-current)"
 flutter pub get
 ```
 

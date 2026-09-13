@@ -268,7 +268,7 @@ class MailCheckerController extends ChangeNotifier {
       _signInClient ??= _googleSignInFactory();
 
   Future<void> signIn() async {
-    if (_isBusy) {
+    if (_isDisposed || _isBusy) {
       return;
     }
 
@@ -314,7 +314,7 @@ class MailCheckerController extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
-    if (_isBusy) {
+    if (_isDisposed || _isBusy) {
       return;
     }
     if (_account == null) {
@@ -362,13 +362,14 @@ class MailCheckerController extends ChangeNotifier {
   }
 
   Future<void> _refreshInbox(MailCheckerAccount account) async {
+    if (_isDisposed) {
+      return;
+    }
+
     _isBusy = true;
     _errorMessage = null;
     _statusMessage = 'Loading Gmail inbox…';
     _notifyListeners();
-    if (_isDisposed) {
-      return;
-    }
 
     try {
       final emails = await (_loadInboxAction?.call(account) ?? _loadInbox(account));
