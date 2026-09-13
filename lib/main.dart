@@ -284,7 +284,10 @@ class MailCheckerController extends ChangeNotifier {
     final client = GoogleAuthClient(authHeaders);
     try {
       final api = gmail.GmailApi(client);
-      final response = await api.users.messages.list('me', maxResults: 10);
+      final response = await api.users.messages.list(
+        'me',
+        maxResults: _messageBatchSize,
+      );
       final messageIds = [
         for (final message in response.messages ?? const <gmail.Message>[])
           if (message.id != null) message.id!,
@@ -330,6 +333,7 @@ class MailCheckerController extends ChangeNotifier {
   }
 }
 
+@immutable
 class InboxEmail {
   const InboxEmail({
     required this.subject,

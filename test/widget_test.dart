@@ -31,6 +31,22 @@ void main() {
     expect(controller.statusMessage, 'Google Sign-In was cancelled.');
   });
 
+
+  test('controller reports sign-in errors', () async {
+    final controller = MailCheckerController(
+      signInAction: () async => throw Exception('signin failed'),
+    );
+
+    await controller.signIn();
+
+    expect(controller.isSignedIn, isFalse);
+    expect(controller.isBusy, isFalse);
+    expect(controller.emails, isEmpty);
+    expect(controller.statusMessage, 'Google Sign-In failed.');
+    expect(controller.errorMessage, contains('signin failed'));
+    expect(controller.errorMessage, contains('README.md'));
+  });
+
   test('controller reports an empty inbox after sign-in', () async {
     final controller = MailCheckerController(
       signInAction: () async => const _FakeMailCheckerAccount(),
