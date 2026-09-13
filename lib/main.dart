@@ -92,7 +92,9 @@ class MailCheckerHomePage extends StatelessWidget {
                 runSpacing: 12,
                 children: [
                   FilledButton.icon(
-                    onPressed: controller.isBusy ? null : controller.signIn,
+                    onPressed: controller.isSignedIn
+                        ? (controller.canRefresh ? controller.refreshInbox : null)
+                        : (controller.isBusy ? null : controller.signIn),
                     icon: const Icon(Icons.login),
                     label: Text(
                       controller.isSignedIn
@@ -255,6 +257,7 @@ class MailCheckerController extends ChangeNotifier {
   MailCheckerSignInClient? _signInClient;
   bool _isDisposed = false;
   bool _isBusy = false;
+  bool _isSigningOut = false;
   String _statusMessage = _signedOutPrompt;
   String? _errorMessage;
   List<InboxEmail> _emails = const <InboxEmail>[];
@@ -263,6 +266,7 @@ class MailCheckerController extends ChangeNotifier {
 
   bool get isBusy => _isBusy;
   bool get isSignedIn => _account != null;
+  bool get canRefresh => _account != null && !_isSigningOut;
   String get statusMessage => _statusMessage;
   String? get errorMessage => _errorMessage;
   List<InboxEmail> get emails => _emails;
@@ -280,15 +284,7 @@ class MailCheckerController extends ChangeNotifier {
     }
 
     if (_account != null) {
-      final operationToken = ++_operationToken;
-      _isBusy = true;
-      _errorMessage = null;
-      _statusMessage = 'Loading Gmail inbox...';
-      _notifyListeners();
-      if (!_isCurrentOperation(operationToken)) {
-        return;
-      }
-      await _refreshInbox(_account!, operationToken: operationToken);
+      await refreshInbox();
       return;
     }
 
@@ -355,6 +351,7 @@ class MailCheckerController extends ChangeNotifier {
     }
 
     _isBusy = true;
+    _isSigningOut = true;
     _errorMessage = null;
     _statusMessage = 'Signing out...';
     _notifyListeners();
@@ -382,7 +379,18 @@ class MailCheckerController extends ChangeNotifier {
       _statusMessage = 'Signed out locally, but Google sign-out failed.';
     }
     _isBusy = false;
+    _isSigningOut = false;
     _notifyListeners();
+  }
+
+  Future<void> refreshInbox() async {
+    final account = _account;
+    if (_isDisposed || account == null || _isSigningOut) {
+      return;
+    }
+
+    final operationToken = ++_operationToken;
+    await _refreshInbox(account, operationToken: operationToken);
   }
 
   Future<void> _refreshInbox(
@@ -419,10 +427,12 @@ class MailCheckerController extends ChangeNotifier {
           '$error\n\nVerify the package name, SHA-1 fingerprint, Gmail API, '
           'and OAuth clients described in README.md.';
       _statusMessage = 'Signed in, but Gmail loading failed.';
+    } finally {
+      if (_isCurrentOperation(operationToken)) {
+        _isBusy = false;
+        _notifyListeners();
+      }
     }
-
-    _isBusy = false;
-    _notifyListeners();
   }
 
   Future<List<InboxEmail>> _loadInbox(MailCheckerAccount account) async {
@@ -497,6 +507,7 @@ class MailCheckerController extends ChangeNotifier {
     _emails = const <InboxEmail>[];
     _errorMessage = null;
     _signInClient = null;
+    _isSigningOut = false;
     _statusMessage = _signedOutPrompt;
     _isBusy = false;
   }
