@@ -455,7 +455,9 @@ class GoogleAuthClient extends http.BaseClient {
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) {
     for (final entry in _headers.entries) {
-      request.headers.putIfAbsent(entry.key, () => entry.value);
+      if (_isAuthHeader(entry.key) || !request.headers.containsKey(entry.key)) {
+        request.headers[entry.key] = entry.value;
+      }
     }
     return _inner.send(request);
   }
@@ -464,5 +466,10 @@ class GoogleAuthClient extends http.BaseClient {
   void close() {
     _inner.close();
     super.close();
+  }
+
+  bool _isAuthHeader(String headerName) {
+    final normalized = headerName.toLowerCase();
+    return normalized == 'authorization' || normalized.startsWith('x-goog-');
   }
 }
