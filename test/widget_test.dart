@@ -219,16 +219,17 @@ void main() {
   test('controller ignores sign-out while already signed out', () async {
     final controller = MailCheckerController(
       googleSignInFactory: () =>
-          const _FakeSignInClient(signOutError: 'should not run'),
+          const _FakeSignInClient(signInError: 'signin failed'),
     );
 
+    await controller.signIn();
     await controller.signOut();
 
     expect(controller.isSignedIn, isFalse);
     expect(controller.isBusy, isFalse);
     expect(
       controller.statusMessage,
-      'Complete the Google Cloud setup in README.md, then sign in.',
+      'Google Sign-In failed.',
     );
     expect(controller.errorMessage, isNull);
   });

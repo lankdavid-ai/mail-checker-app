@@ -313,6 +313,8 @@ class MailCheckerController extends ChangeNotifier {
       return;
     }
     if (_account == null) {
+      _errorMessage = null;
+      notifyListeners();
       return;
     }
 
