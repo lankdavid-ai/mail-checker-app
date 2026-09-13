@@ -11,20 +11,73 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mail_checker_app/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('shows Google sign-in prompt when signed out', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const TestApp(
+        child: MailCheckerHomePage(
+          isSignedIn: false,
+          isLoading: false,
+          emails: <MailMessageSummary>[],
+          onRefresh: _noop,
+          onSignIn: _noop,
+          onSignOut: _noop,
+        ),
+      ),
+    );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(find.text('Mail Checker'), findsOneWidget);
+    expect(find.text('Sign in with Google'), findsOneWidget);
+    expect(
+      find.text('Sign in with Google to load recent emails from your Gmail inbox.'),
+      findsOneWidget,
+    );
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  testWidgets('shows fetched emails and logout action when signed in', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const TestApp(
+        child: MailCheckerHomePage(
+          isSignedIn: true,
+          isLoading: false,
+          displayName: 'Flutter Tester',
+          emails: <MailMessageSummary>[
+            MailMessageSummary(
+              sender: 'alice@example.com',
+              subject: 'Welcome',
+              preview: 'Thanks for trying the Gmail integration.',
+            ),
+          ],
+          onRefresh: _noop,
+          onSignIn: _noop,
+          onSignOut: _noop,
+        ),
+      ),
+    );
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('Signed in as Flutter Tester'), findsOneWidget);
+    expect(find.text('Welcome'), findsOneWidget);
+    expect(find.text('alice@example.com'), findsOneWidget);
+    expect(
+      find.text('Thanks for trying the Gmail integration.'),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Logout'), findsOneWidget);
   });
 }
+
+class TestApp extends StatelessWidget {
+  const TestApp({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(home: child);
+  }
+}
+
+Future<void> _noop() async {}
