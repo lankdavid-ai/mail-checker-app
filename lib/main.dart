@@ -281,6 +281,7 @@ class MailCheckerController extends ChangeNotifier {
 
     if (_account != null) {
       final operationToken = ++_operationToken;
+      _isBusy = true;
       await _refreshInbox(_account!, operationToken: operationToken);
       return;
     }
@@ -529,9 +530,15 @@ class GoogleAuthClient extends http.BaseClient {
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) {
+    final existingHeaderNames = <String>{
+      for (final headerName in request.headers.keys) headerName.toLowerCase(),
+    };
     for (final entry in _headers.entries) {
-      if (_isAuthHeader(entry.key) || !request.headers.containsKey(entry.key)) {
+      final normalizedHeaderName = entry.key.toLowerCase();
+      if (_isAuthHeader(entry.key) ||
+          !existingHeaderNames.contains(normalizedHeaderName)) {
         request.headers[entry.key] = entry.value;
+        existingHeaderNames.add(normalizedHeaderName);
       }
     }
     return _inner.send(request);

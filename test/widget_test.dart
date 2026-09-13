@@ -316,14 +316,14 @@ void main() {
     );
     final request = http.Request('GET', Uri.parse('https://example.com'))
       ..headers['Authorization'] = 'placeholder'
-      ..headers['Accept'] = 'application/json';
+      ..headers['accept'] = 'application/json';
 
     await client.send(request);
 
     expect(innerClient.lastRequest, isNotNull);
     expect(innerClient.lastRequest!.headers['Authorization'], '******');
     expect(innerClient.lastRequest!.headers['x-goog-authuser'], '0');
-    expect(innerClient.lastRequest!.headers['Accept'], 'application/json');
+    expect(innerClient.lastRequest!.headers['accept'], 'application/json');
   });
 }
 
