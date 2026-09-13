@@ -7,6 +7,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:googleapis/gmail/v1.dart' as gmail;
 
 import 'package:mail_checker_app/main.dart';
 
@@ -254,6 +256,21 @@ void main() {
       'Unable to access Gmail right now. Please confirm Google Sign-In is configured for this app and try again.',
     );
   });
+
+  test('GoogleSignInAuthProvider keeps Gmail readonly scope and delegates sign out', () async {
+    final FakeGoogleSignInGateway gateway = FakeGoogleSignInGateway();
+    final GoogleSignInAuthProvider provider = GoogleSignInAuthProvider(
+      gateway: gateway,
+    );
+
+    expect(gateway.scopes, contains(gmail.GmailApi.gmailReadonlyScope));
+    expect(await provider.signIn(), isNull);
+    expect(await provider.signInSilently(), isNull);
+
+    await provider.signOut();
+
+    expect(gateway.signOutCalls, 1);
+  });
 }
 
 class TestApp extends StatelessWidget {
@@ -319,5 +336,23 @@ class FakeGmailService extends GmailService {
     GoogleUserSession account,
   ) async {
     return emails;
+  }
+}
+
+class FakeGoogleSignInGateway implements GoogleSignInGateway {
+  @override
+  final List<String> scopes = FlutterGoogleSignInGateway.defaultScopes;
+
+  int signOutCalls = 0;
+
+  @override
+  Future<GoogleSignInAccount?> signIn() async => null;
+
+  @override
+  Future<GoogleSignInAccount?> signInSilently() async => null;
+
+  @override
+  Future<void> signOut() async {
+    signOutCalls++;
   }
 }

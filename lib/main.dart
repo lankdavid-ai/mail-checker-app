@@ -205,6 +205,8 @@ class _InboxView extends StatelessWidget {
                       ? 'Recent inbox messages'
                       : 'Signed in as $displayName',
                   style: Theme.of(context).textTheme.titleMedium,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               IconButton(
@@ -370,8 +372,11 @@ class MailCheckerController extends ChangeNotifier {
   }
 
   Future<void> _refreshStateFor(GoogleUserSession account) async {
+    final List<MailMessageSummary> emails = await _gmailService.fetchRecentEmails(
+      account,
+    );
     _currentUser = account;
-    _emails = await _gmailService.fetchRecentEmails(account);
+    _emails = emails;
     _errorMessage = null;
   }
 
@@ -405,7 +410,7 @@ class GmailService {
           .list(
             'me',
             labelIds: <String>['INBOX'],
-            maxResults: 10,
+            maxResults: 5,
           );
 
       final Iterable<String> messageIds = (response.messages ?? const <gmail.Message>[])
@@ -495,16 +500,14 @@ abstract class GoogleUserSession {
 }
 
 class GoogleSignInAuthProvider implements GoogleAuthProvider {
-  GoogleSignInAuthProvider()
-    : _googleSignIn = GoogleSignIn(
-        scopes: <String>[gmail.GmailApi.gmailReadonlyScope],
-      );
+  GoogleSignInAuthProvider({GoogleSignInGateway? gateway})
+    : _gateway = gateway ?? FlutterGoogleSignInGateway();
 
-  final GoogleSignIn _googleSignIn;
+  final GoogleSignInGateway _gateway;
 
   @override
   Future<GoogleUserSession?> signIn() async {
-    final GoogleSignInAccount? account = await _googleSignIn.signIn();
+    final GoogleSignInAccount? account = await _gateway.signIn();
     if (account == null) {
       return null;
     }
@@ -513,7 +516,7 @@ class GoogleSignInAuthProvider implements GoogleAuthProvider {
 
   @override
   Future<GoogleUserSession?> signInSilently() async {
-    final GoogleSignInAccount? account = await _googleSignIn.signInSilently();
+    final GoogleSignInAccount? account = await _gateway.signInSilently();
     if (account == null) {
       return null;
     }
@@ -522,7 +525,7 @@ class GoogleSignInAuthProvider implements GoogleAuthProvider {
 
   @override
   Future<void> signOut() async {
-    await _googleSignIn.disconnect();
+    await _gateway.signOut();
   }
 }
 
@@ -539,4 +542,39 @@ class GoogleSignInSession implements GoogleUserSession {
 
   @override
   String get email => _account.email;
+}
+
+abstract class GoogleSignInGateway {
+  List<String> get scopes;
+  Future<GoogleSignInAccount?> signIn();
+  Future<GoogleSignInAccount?> signInSilently();
+  Future<void> signOut();
+}
+
+class FlutterGoogleSignInGateway implements GoogleSignInGateway {
+  FlutterGoogleSignInGateway({
+    GoogleSignIn? googleSignIn,
+    List<String> scopes = defaultScopes,
+  }) : _googleSignIn = googleSignIn ?? GoogleSignIn(scopes: scopes),
+       scopes = List.unmodifiable(scopes);
+
+  static const List<String> defaultScopes = <String>[
+    gmail.GmailApi.gmailReadonlyScope,
+  ];
+
+  final GoogleSignIn _googleSignIn;
+
+  @override
+  final List<String> scopes;
+
+  @override
+  Future<GoogleSignInAccount?> signIn() => _googleSignIn.signIn();
+
+  @override
+  Future<GoogleSignInAccount?> signInSilently() => _googleSignIn.signInSilently();
+
+  @override
+  Future<void> signOut() async {
+    await _googleSignIn.signOut();
+  }
 }
