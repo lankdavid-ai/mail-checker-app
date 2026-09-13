@@ -106,6 +106,36 @@ void main() {
     expect(find.text('Unable to access Gmail right now.'), findsOneWidget);
     expect(find.byTooltip('Refresh emails'), findsOneWidget);
   });
+
+  testWidgets('shows loading indicator and disables signed-in actions', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const TestApp(
+        child: MailCheckerHomePage(
+          isSignedIn: true,
+          isLoading: true,
+          displayName: 'Flutter Tester',
+          emails: <MailMessageSummary>[],
+          onRefresh: _noop,
+          onSignIn: _noop,
+          onSignOut: _noop,
+        ),
+      ),
+    );
+
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+
+    final IconButton logoutButton = tester.widget<IconButton>(
+      find.byTooltip('Logout'),
+    );
+    final IconButton refreshButton = tester.widget<IconButton>(
+      find.byTooltip('Refresh emails'),
+    );
+
+    expect(logoutButton.onPressed, isNull);
+    expect(refreshButton.onPressed, isNull);
+  });
 }
 
 class TestApp extends StatelessWidget {

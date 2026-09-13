@@ -112,6 +112,7 @@ class MailCheckerHomePage extends StatelessWidget {
                       displayName: displayName,
                       emails: emails,
                       errorMessage: errorMessage,
+                      isLoading: isLoading,
                       onRefresh: onRefresh,
                     )
                   : _SignedOutView(
@@ -179,12 +180,14 @@ class _InboxView extends StatelessWidget {
     required this.displayName,
     required this.emails,
     required this.errorMessage,
+    required this.isLoading,
     required this.onRefresh,
   });
 
   final String? displayName;
   final List<MailMessageSummary> emails;
   final String? errorMessage;
+  final bool isLoading;
   final Future<void> Function() onRefresh;
 
   @override
@@ -205,7 +208,7 @@ class _InboxView extends StatelessWidget {
                 ),
               ),
               IconButton(
-                onPressed: () => unawaited(onRefresh()),
+                onPressed: isLoading ? null : () => unawaited(onRefresh()),
                 tooltip: 'Refresh emails',
                 icon: const Icon(Icons.refresh),
               ),
@@ -303,6 +306,8 @@ class MailCheckerController extends ChangeNotifier {
       final GoogleSignInAccount? account = await _googleSignIn.signInSilently();
       if (account != null) {
         await _loadEmailsFor(account);
+      } else {
+        _clearSession();
       }
     } catch (error) {
       _errorMessage = _friendlyError(error);
@@ -352,9 +357,7 @@ class MailCheckerController extends ChangeNotifier {
 
     try {
       await _googleSignIn.signOut();
-      _currentUser = null;
-      _emails = const [];
-      _errorMessage = null;
+      _clearSession();
     } catch (error) {
       _errorMessage = _friendlyError(error);
     } finally {
@@ -371,6 +374,13 @@ class MailCheckerController extends ChangeNotifier {
 
   void _setLoading(bool value) {
     _isLoading = value;
+    notifyListeners();
+  }
+
+  void _clearSession() {
+    _currentUser = null;
+    _emails = const [];
+    _errorMessage = null;
     notifyListeners();
   }
 
