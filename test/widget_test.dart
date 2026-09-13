@@ -87,6 +87,25 @@ void main() {
     expect(find.text('No recent emails were found in your inbox.'), findsOneWidget);
   });
 
+  testWidgets('shows fallback inbox title when display name is unavailable', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const TestApp(
+        child: MailCheckerHomePage(
+          isSignedIn: true,
+          isLoading: false,
+          emails: <MailMessageSummary>[],
+          onRefresh: _noop,
+          onSignIn: _noop,
+          onSignOut: _noop,
+        ),
+      ),
+    );
+
+    expect(find.text('Recent inbox messages'), findsOneWidget);
+  });
+
   testWidgets('shows signed-in Gmail access error', (WidgetTester tester) async {
     await tester.pumpWidget(
       const TestApp(
@@ -202,7 +221,7 @@ void main() {
     expect(controller.emails, isEmpty);
   });
 
-  test('controller clears local session and keeps generic error on sign-out failure', () async {
+  test('controller keeps local session and shows generic error on sign-out failure', () async {
     final FakeGoogleAuthProvider authProvider = FakeGoogleAuthProvider(
       signInUser: FakeGoogleUserSession(
         email: 'alice@example.com',
@@ -227,9 +246,9 @@ void main() {
 
     await controller.signOut();
 
-    expect(controller.isSignedIn, isFalse);
-    expect(controller.currentUser, isNull);
-    expect(controller.emails, isEmpty);
+    expect(controller.isSignedIn, isTrue);
+    expect(controller.currentUser?.email, 'alice@example.com');
+    expect(controller.emails, hasLength(1));
     expect(
       controller.errorMessage,
       'Unable to access Gmail right now. Please confirm Google Sign-In is configured for this app and try again.',
