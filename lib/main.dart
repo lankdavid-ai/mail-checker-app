@@ -312,6 +312,9 @@ class MailCheckerController extends ChangeNotifier {
     if (_isBusy) {
       return;
     }
+    if (_account == null) {
+      return;
+    }
 
     _isBusy = true;
     _errorMessage = null;
