@@ -392,7 +392,7 @@ class MailCheckerController extends ChangeNotifier {
         for (final message in response.messages ?? const <gmail.Message>[])
           if (message.id != null) message.id!,
       ];
-      return Future.wait(messageIds.map((id) => _loadMessage(api, id)));
+      return await Future.wait(messageIds.map((id) => _loadMessage(api, id)));
     } finally {
       client.close();
     }
