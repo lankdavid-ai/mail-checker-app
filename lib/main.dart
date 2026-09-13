@@ -191,6 +191,10 @@ class MailCheckerController extends ChangeNotifier {
       : 'Using the Google server client ID provided through dart-define.';
 
   Future<void> signIn() async {
+    if (_isBusy) {
+      return;
+    }
+
     _isBusy = true;
     _statusMessage = 'Opening Google Sign-In…';
     _errorMessage = null;
@@ -242,6 +246,10 @@ class MailCheckerController extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    if (_isBusy) {
+      return;
+    }
+
     _isBusy = true;
     _errorMessage = null;
     _account = null;
@@ -323,6 +331,18 @@ class InboxEmail {
   final String subject;
   final String from;
   final String snippet;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is InboxEmail &&
+            subject == other.subject &&
+            from == other.from &&
+            snippet == other.snippet;
+  }
+
+  @override
+  int get hashCode => Object.hash(subject, from, snippet);
 }
 
 class GoogleAuthClient extends http.BaseClient {
