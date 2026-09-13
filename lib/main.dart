@@ -182,7 +182,7 @@ class GoogleMailCheckerSignInClient implements MailCheckerSignInClient {
 
   @override
   Future<void> signOut() {
-    return _googleSignIn.signOut();
+    return _googleSignIn.disconnect();
   }
 }
 
@@ -325,7 +325,11 @@ class MailCheckerController extends ChangeNotifier {
         for (final message in response.messages ?? const <gmail.Message>[])
           if (message.id != null) message.id!,
       ];
-      return Future.wait(messageIds.map((id) => _loadMessage(api, id)));
+      final emails = <InboxEmail>[];
+      for (final id in messageIds) {
+        emails.add(await _loadMessage(api, id));
+      }
+      return emails;
     } finally {
       client.close();
     }
