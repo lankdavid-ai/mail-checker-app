@@ -283,6 +283,7 @@ class MailCheckerController extends ChangeNotifier {
     _notifyListeners();
     if (_isDisposed) {
       _isBusy = false;
+      _statusMessage = _signedOutPrompt;
       return;
     }
 
@@ -336,7 +337,11 @@ class MailCheckerController extends ChangeNotifier {
     _statusMessage = 'Signing out...';
     _notifyListeners();
     if (_isDisposed) {
+      _account = null;
+      _emails = const <InboxEmail>[];
+      _signInClient = null;
       _isBusy = false;
+      _statusMessage = _signedOutPrompt;
       return;
     }
 
@@ -374,6 +379,7 @@ class MailCheckerController extends ChangeNotifier {
     _notifyListeners();
     if (_isDisposed) {
       _isBusy = false;
+      _statusMessage = _account == null ? _signedOutPrompt : _statusMessage;
       return;
     }
 
